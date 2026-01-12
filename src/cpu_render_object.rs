@@ -1,10 +1,3 @@
-#![allow(
-    dead_code,
-    unused_variables,
-    clippy::too_many_arguments,
-    clippy::unnecessary_wraps,
-    unused_imports
-)]
 
 use thiserror::Error;
 use anyhow::{anyhow, Result};
@@ -30,7 +23,7 @@ use vulkanalia::vk::KhrSwapchainExtension;
 use vulkanalia::bytecode::Bytecode;
 
 use std::mem::size_of;
-use cgmath::{vec2, vec3};
+use cgmath::{Quaternion, Vector3, vec2, vec3};
 
 use crate::app::AppData;
 use crate::vertex::Vertex;
@@ -41,9 +34,31 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 
 
-pub fn load_model(data: &mut AppData) -> Result<()> {
-    let mut reader = BufReader::new(File::open("cube.obj")?);
+// cpu render object
+// gpu render object would have actual vulkan pointers and buffers
+#[derive(Clone, Debug)]
+pub struct CpuRenderObject {
+    pub indices: Vec<u32>,
+    pub vertices: Vec<Vertex>,
+    pub pixels: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+    pub translation: Vector3<f32>,
+    pub rotation: Quaternion<f32>,
+    pub scale: Vector3<f32>,
+}
 
+impl CpuRenderObject {
+    pub fn new(model_name: &str, image_name: &str, translation: Vector3<f32>, rotation: Quaternion<f32>, scale: Vector3<f32>) -> Result<Self> {
+        let (indices, vertices) = load_model(model_name)?;
+        let (pixels, width, height) = load_image(image_name)?;
+
+        Ok(Self { indices, vertices, pixels, width, height, translation, rotation, scale })
+    }
+}
+
+fn load_model(model_name: &str) -> Result<(Vec<u32>, Vec<Vertex>)> {
+    let mut reader = BufReader::new(File::open(model_name)?);
     let (models, _) = tobj::load_obj_buf(
         &mut reader,
         &tobj::LoadOptions { triangulate: true, single_index: true, ..Default::default() },
@@ -52,7 +67,8 @@ pub fn load_model(data: &mut AppData) -> Result<()> {
 
     let mut unique_vertices = HashMap::new();
 
-    println!("{} len models", models.len().to_string());
+    let mut indices = Vec::<u32>::new();
+    let mut vertices = Vec::<Vertex>::new();
 
     for model in &models {
         for index in &model.mesh.indices {
@@ -72,22 +88,37 @@ pub fn load_model(data: &mut AppData) -> Result<()> {
                 ),
             };
 
-            // data.vertices.push(vertex);
-            // data.indices.push(data.indices.len() as u32);
-
             if let Some(index) = unique_vertices.get(&vertex) {
-                data.indices.push(*index as u32);
+                indices.push(*index as u32);
             } else {
-                let index = data.vertices.len();
+                let index = vertices.len();
                 unique_vertices.insert(vertex, index);
-                data.vertices.push(vertex);
-                data.indices.push(index as u32);
+                vertices.push(vertex);
+                indices.push(index as u32);
             }
-
         }
     }
 
-    println!("Loaded {} vertices, {} indices", data.vertices.len(), data.indices.len());
+    println!("Loaded model '{model_name}' with {} vertices and {} indices", vertices.len(), indices.len());
 
-    Ok(())
+    Ok((indices, vertices))
+}
+
+fn load_image(image_name: &str) -> Result<(Vec<u8>, u32, u32)> {
+    let image = File::open(image_name)?;
+    let decoder = png::Decoder::new(image);
+    let mut reader = decoder.read_info()?;
+
+    let mut pixels = vec![0; reader.info().raw_bytes()];
+    reader.next_frame(&mut pixels)?;
+    
+    let (width, height) = reader.info().size();
+    let color_type = reader.info().color_type;
+    if color_type != png::ColorType::Rgba {
+        panic!("Invalid texture image '{image_name}'");
+    }
+
+    println!("Loaded image '{image_name}' with {width} width and {height} height");
+
+    Ok((pixels, width, height))
 }

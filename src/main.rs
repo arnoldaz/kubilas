@@ -11,7 +11,9 @@ mod app;
 mod vulkan;
 mod swapchain;
 mod image;
-mod model;
+mod cpu_render_object;
+mod gpu_render_object;
+
 
 use app::App;
 use vertex::{Vertex};
@@ -48,6 +50,7 @@ use std::ptr::copy_nonoverlapping as memcpy;
 
 // NEXT: https://kylemayes.github.io/vulkanalia/vertex/staging_buffer.html
 
+// TODO: use dynamic rendering
 
 fn main() -> Result<()> {
     pretty_env_logger::init();

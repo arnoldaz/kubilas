@@ -35,11 +35,12 @@ type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 type Mat4 = cgmath::Matrix4<f32>;
 
-use crate::image::{create_texture_image, create_texture_image_view, create_texture_sampler};
+use crate::cpu_render_object::CpuRenderObject;
+use crate::gpu_render_object::{self, GpuRenderObject};
+use crate::image::{create_texture_sampler};
 use crate::swapchain::{create_swapchain, create_swapchain_image_views};
 use crate::vertex::Vertex;
-use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, VALIDATION_ENABLED, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_framebuffers, create_index_buffer, create_instance, create_logical_device, create_pipeline, create_render_pass, create_sync_objects, create_uniform_buffers, create_vertex_buffer, pick_physical_device};
-use crate::model::{load_model};
+use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, VALIDATION_ENABLED, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_framebuffers, create_instance, create_logical_device, create_pipeline, create_render_pass, create_sync_objects, create_uniform_buffers, pick_physical_device};
 
 use std::ptr::copy_nonoverlapping as memcpy;
 
@@ -59,6 +60,7 @@ pub struct App {
     pub frame: usize,
     pub resized: bool,
     pub start: Instant,
+    pub gpu_render_objects: Vec<GpuRenderObject>,
 }
 
 impl App {
@@ -79,18 +81,41 @@ impl App {
         create_command_pool(&instance, &device, &mut data)?;
         create_depth_objects(&instance, &device, &mut data)?;
         create_framebuffers(&device, &mut data)?;
-        create_texture_image(&instance, &device, &mut data)?;
-        create_texture_image_view(&device, &mut data)?;
+
+        let translation1 = Vector3 { x: 1.0, y: 0.0, z: 0.0 };
+        let rotation1 = Quaternion::from(Euler {
+            x: Rad(0.0),
+            y: Rad(std::f32::consts::FRAC_PI_2),
+            z: Rad(0.0),
+        });
+        let scale1 = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
+        let cpu_render_object1 = CpuRenderObject::new("assets/cube.obj", "assets/cube.png", translation1, rotation1, scale1)?;
+        let gpu_render_object1 = GpuRenderObject::new(&instance, &device, &data, &cpu_render_object1)?;
+
+        let translation2 = Vector3 { x: -2.0, y: 0.0, z: 1.0 };
+        let rotation2 = Quaternion::from(Euler {
+            x: Rad(0.0),
+            y: Rad(0.0),
+            z: Rad(0.0),
+        });
+        let scale2 = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
+        let cpu_render_object2 = CpuRenderObject::new("assets/teapot.obj", "assets/viking_room.png", translation2, rotation2, scale2)?;
+        let gpu_render_object2 = GpuRenderObject::new(&instance, &device, &data, &cpu_render_object2)?;
+
+        let gpu_render_objects = vec![gpu_render_object1, gpu_render_object2];
+
+        // create_texture_image(&instance, &device, &mut data, &render_object)?;
+        // create_texture_image_view(&device, &mut data)?;
         create_texture_sampler(&device, &mut data)?;
-        load_model(&mut data)?;
-        create_vertex_buffer(&instance, &device, &mut data)?;
-        create_index_buffer(&instance, &device, &mut data)?;
+
+        // create_vertex_buffer(&instance, &device, &mut data)?;
+        // create_index_buffer(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
         create_descriptor_pool(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data)?;
+        create_descriptor_sets(&device, &mut data, &gpu_render_objects)?;
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
-        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now() })
+        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects })
     }
 
     /// Renders a frame for our Vulkan app.
@@ -175,16 +200,43 @@ impl App {
 
     /// Destroys our Vulkan app.
     pub unsafe fn destroy(&mut self) {
-        self.destroy_swapchain();
+        // old destroy swapchain
+        self.device.destroy_image_view(self.data.depth_image_view, None);
+        self.device.free_memory(self.data.depth_image_memory, None);
+        self.device.destroy_image(self.data.depth_image, None);
+        self.device.destroy_descriptor_pool(self.data.descriptor_pool, None);
+        self.data.uniform_buffers
+            .iter()
+            .for_each(|b| self.device.destroy_buffer(*b, None));
+        self.data.uniform_buffers_memory
+            .iter()
+            .for_each(|m| self.device.free_memory(*m, None));
+        self.data.framebuffers
+            .iter()
+            .for_each(|f| self.device.destroy_framebuffer(*f, None));
+        self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
+        self.device.destroy_pipeline(self.data.pipeline, None);
+        self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
+        self.device.destroy_render_pass(self.data.render_pass, None);
+        self.data.swapchain_image_views
+            .iter()
+            .for_each(|v| self.device.destroy_image_view(*v, None));
+        self.device.destroy_swapchain_khr(self.data.swapchain, None);
+        // end of old destroy swapchain
+
         self.device.destroy_sampler(self.data.texture_sampler, None);
-        self.device.destroy_image_view(self.data.texture_image_view, None);
-        self.device.destroy_image(self.data.texture_image, None);
-        self.device.free_memory(self.data.texture_image_memory, None);
+        // self.device.destroy_image_view(self.data.texture_image_view, None);
+        // self.device.destroy_image(self.data.texture_image, None);
+        // self.device.free_memory(self.data.texture_image_memory, None);
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
-        self.device.destroy_buffer(self.data.index_buffer, None);
-        self.device.free_memory(self.data.index_buffer_memory, None);
-        self.device.destroy_buffer(self.data.vertex_buffer, None);
-        self.device.free_memory(self.data.vertex_buffer_memory, None);
+        // self.device.destroy_buffer(self.data.index_buffer, None);
+        // self.device.free_memory(self.data.index_buffer_memory, None);
+        // self.device.destroy_buffer(self.data.vertex_buffer, None);
+        // self.device.free_memory(self.data.vertex_buffer_memory, None);
+
+        self.gpu_render_objects
+            .iter()
+            .for_each(|o| o.destroy(&self.device));
 
         self.data.in_flight_fences
             .iter()
@@ -208,7 +260,14 @@ impl App {
 
     pub unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
+
         self.destroy_swapchain();
+
+        // self.data.swapchain_image_views
+        //     .iter()
+        //     .for_each(|v| self.device.destroy_image_view(*v, None));
+        // self.device.destroy_swapchain_khr(self.data.swapchain, None);
+
         create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
         create_swapchain_image_views(&self.device, &mut self.data)?;
         create_render_pass(&self.instance, &self.device, &mut self.data)?;
@@ -217,7 +276,7 @@ impl App {
         create_framebuffers(&self.device, &mut self.data)?;
         create_uniform_buffers(&self.instance, &self.device, &mut self.data)?;
         create_descriptor_pool(&self.device, &mut self.data)?;
-        create_descriptor_sets(&self.device, &mut self.data)?;
+        create_descriptor_sets(&self.device, &mut self.data, &self.gpu_render_objects)?;
         create_command_buffers(&self.device, &mut self.data)?;
         self.data
             .images_in_flight
@@ -276,8 +335,6 @@ impl App {
         //     Deg(90.0) * time / 2.0
         // );
 
-
-
         let info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
 
@@ -310,72 +367,105 @@ impl App {
 
         self.device.cmd_begin_render_pass(command_buffer, &info, vk::SubpassContents::INLINE);
         self.device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, self.data.pipeline);
-        self.device.cmd_bind_vertex_buffers(command_buffer, 0, &[self.data.vertex_buffer], &[0]);
-        self.device.cmd_bind_index_buffer(command_buffer, self.data.index_buffer, 0, vk::IndexType::UINT32);
-
-        self.device.cmd_bind_descriptor_sets(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.data.pipeline_layout,
-            0,
-            &[self.data.descriptor_sets[image_index]],
-            &[],
-        );
-
-        // first cube
-        let model = Self::trs_matrix(
-            Vector3 { x: 1.0, y: 0.0, z: 0.0 },
-            Quaternion::from(Euler {
-                x: Rad(0.0),
-                y: Rad(std::f32::consts::FRAC_PI_2) * time,
-                z: Rad(0.0),
-            }),
-            Vector3 { x: 1.0, y: 1.0, z: 1.0 },
-        );
-
-        let model_bytes = std::slice::from_raw_parts(
-            &model as *const Mat4 as *const u8,
-            size_of::<Mat4>()
-        );
-
-        self.device.cmd_push_constants(
-            command_buffer,
-            self.data.pipeline_layout,
-            vk::ShaderStageFlags::VERTEX,
-            0,
-            model_bytes,
-        );
-
-        self.device.cmd_draw_indexed(command_buffer, self.data.indices.len() as u32, 1, 0, 0, 0);
-
-        // second cube
-        let model = Self::trs_matrix(
-            Vector3 { x: -2.0, y: 0.0, z: 1.0 },
-            Quaternion::from(Euler {
-                x: Rad(0.0),
-                y: Rad(0.0),
-                z: Rad(std::f32::consts::FRAC_PI_2) * time / 2.0,
-            }),
-            Vector3 { x: 1.0, y: 1.0, z: 1.0 },
-        );
-
-        let model_bytes = std::slice::from_raw_parts(
-            &model as *const Mat4 as *const u8,
-            size_of::<Mat4>()
-        );
-
-        self.device.cmd_push_constants(
-            command_buffer,
-            self.data.pipeline_layout,
-            vk::ShaderStageFlags::VERTEX,
-            0,
-            model_bytes,
-        );
-
-        self.device.cmd_draw_indexed(command_buffer, self.data.indices.len() as u32, 1, 0, 0, 0);
 
 
+        for (object_index, gpu_render_object) in self.gpu_render_objects.iter().enumerate() {
+            // TODO: have only 1 buffer for both and use offset instead, nvidia dev guide says it's very bad now
+            self.device.cmd_bind_vertex_buffers(command_buffer, 0, &[gpu_render_object.vertex_buffer], &[0]);
+            self.device.cmd_bind_index_buffer(command_buffer, gpu_render_object.index_buffer, 0, vk::IndexType::UINT32);
 
+            self.device.cmd_bind_descriptor_sets(
+                command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                self.data.pipeline_layout,
+                0,
+                &[self.data.descriptor_sets[image_index]],
+                &[],
+            );
+
+            let model = Self::trs_matrix(gpu_render_object.translation, gpu_render_object.rotation, gpu_render_object.scale);
+            let model_bytes = std::slice::from_raw_parts(
+                &model as *const Mat4 as *const u8,
+                size_of::<Mat4>()
+            );
+
+            self.device.cmd_push_constants(
+                command_buffer,
+                self.data.pipeline_layout,
+                vk::ShaderStageFlags::VERTEX,
+                0,
+                model_bytes,
+            );
+
+            // let object_index_number = object_index as u32;
+            // let frag_bytes = std::slice::from_raw_parts(
+            //     &object_index_number as *const u32 as *const u8,
+            //     size_of::<u32>()
+            // );
+            let obj_index_bytes = std::slice::from_raw_parts(&(object_index as u32) as *const u32 as *const u8, 4);
+            self.device.cmd_push_constants(
+                command_buffer,
+                self.data.pipeline_layout,
+                vk::ShaderStageFlags::FRAGMENT,
+                64, // offset vertex push constants
+                obj_index_bytes,
+            );
+
+            self.device.cmd_draw_indexed(command_buffer, gpu_render_object.indices_count, 1, 0, 0, 0);
+        }
+
+
+        // // first cube
+        // let model = Self::trs_matrix(
+        //     Vector3 { x: 1.0, y: 0.0, z: 0.0 },
+        //     Quaternion::from(Euler {
+        //         x: Rad(0.0),
+        //         y: Rad(std::f32::consts::FRAC_PI_2) * time,
+        //         z: Rad(0.0),
+        //     }),
+        //     Vector3 { x: 1.0, y: 1.0, z: 1.0 },
+        // );
+
+        // let model_bytes = std::slice::from_raw_parts(
+        //     &model as *const Mat4 as *const u8,
+        //     size_of::<Mat4>()
+        // );
+
+        // self.device.cmd_push_constants(
+        //     command_buffer,
+        //     self.data.pipeline_layout,
+        //     vk::ShaderStageFlags::VERTEX,
+        //     0,
+        //     model_bytes,
+        // );
+
+        // self.device.cmd_draw_indexed(command_buffer, self.gpu_render_object.indices_count, 1, 0, 0, 0);
+
+        // // second cube
+        // let model = Self::trs_matrix(
+        //     Vector3 { x: -2.0, y: 0.0, z: 1.0 },
+        //     Quaternion::from(Euler {
+        //         x: Rad(0.0),
+        //         y: Rad(0.0),
+        //         z: Rad(std::f32::consts::FRAC_PI_2) * time / 2.0,
+        //     }),
+        //     Vector3 { x: 1.0, y: 1.0, z: 1.0 },
+        // );
+
+        // let model_bytes = std::slice::from_raw_parts(
+        //     &model as *const Mat4 as *const u8,
+        //     size_of::<Mat4>()
+        // );
+
+        // self.device.cmd_push_constants(
+        //     command_buffer,
+        //     self.data.pipeline_layout,
+        //     vk::ShaderStageFlags::VERTEX,
+        //     0,
+        //     model_bytes,
+        // );
+
+        // self.device.cmd_draw_indexed(command_buffer, self.gpu_render_object.indices_count, 1, 0, 0, 0);
 
 
         self.device.cmd_end_render_pass(command_buffer);
@@ -458,19 +548,19 @@ pub struct AppData {
     pub render_finished_semaphores: Vec<vk::Semaphore>,
     pub in_flight_fences: Vec<vk::Fence>,
     pub images_in_flight: Vec<vk::Fence>,
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>,
-    pub vertex_buffer: vk::Buffer,
-    pub vertex_buffer_memory: vk::DeviceMemory,
-    pub index_buffer: vk::Buffer,
-    pub index_buffer_memory: vk::DeviceMemory,
+    // pub vertices: Vec<Vertex>,
+    // pub indices: Vec<u32>,
+    // pub vertex_buffer: vk::Buffer,
+    // pub vertex_buffer_memory: vk::DeviceMemory,
+    // pub index_buffer: vk::Buffer,
+    // pub index_buffer_memory: vk::DeviceMemory,
     pub uniform_buffers: Vec<vk::Buffer>,
     pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
     pub descriptor_pool: vk::DescriptorPool,
     pub descriptor_sets: Vec<vk::DescriptorSet>,
-    pub texture_image: vk::Image,
-    pub texture_image_memory: vk::DeviceMemory,
-    pub texture_image_view: vk::ImageView,
+    // pub texture_image: vk::Image,
+    // pub texture_image_memory: vk::DeviceMemory,
+    // pub texture_image_view: vk::ImageView,
     pub texture_sampler: vk::Sampler,
     pub depth_image: vk::Image,
     pub depth_image_memory: vk::DeviceMemory,

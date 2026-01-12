@@ -36,8 +36,9 @@ type Vec3 = cgmath::Vector3<f32>;
 type Mat4 = cgmath::Matrix4<f32>;
 
 use crate::app::AppData;
+use crate::cpu_render_object::{CpuRenderObject};
 use crate::swapchain::{create_swapchain, create_swapchain_image_views};
-use crate::vulkan::{begin_single_time_commands, create_buffer, create_command_buffers, create_command_pool, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_framebuffers, create_index_buffer, create_instance, create_logical_device, create_pipeline, create_render_pass, create_sync_objects, create_uniform_buffers, create_vertex_buffer, end_single_time_commands, get_memory_type_index, pick_physical_device, UniformBufferObject, MAX_FRAMES_IN_FLIGHT, VALIDATION_ENABLED};
+use crate::vulkan::{begin_single_time_commands, create_buffer, create_command_buffers, create_command_pool, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_framebuffers, create_instance, create_logical_device, create_pipeline, create_render_pass, create_sync_objects, create_uniform_buffers, end_single_time_commands, get_memory_type_index, pick_physical_device, UniformBufferObject, MAX_FRAMES_IN_FLIGHT, VALIDATION_ENABLED};
 
 use std::ptr::copy_nonoverlapping as memcpy;
 
@@ -66,110 +67,6 @@ pub unsafe fn create_image_view(
     Ok(device.create_image_view(&info, None)?)
 }
 
-pub unsafe fn create_texture_image(
-    instance: &Instance,
-    device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
-    // let image = File::open("revenant.png")?;
-    let image = File::open("cube.png")?;
-
-    let decoder = png::Decoder::new(image);
-    let mut reader = decoder.read_info()?;
-
-    let mut pixels = vec![0;  reader.info().raw_bytes()];
-    reader.next_frame(&mut pixels)?;
-    
-    let size = reader.info().raw_bytes() as u64;
-    let (width, height) = reader.info().size();
-    println!("width: {}", width.to_string());
-    println!("height: {}", height.to_string());
-
-    let color_type = reader.info().color_type;
-    if color_type != png::ColorType::Rgba {
-        panic!("Invalid texture image.");
-    }
-
-    // TODO: consider using vkMemoryToImageCopy instead of buffer after upgrading to 1.4
-
-    let (staging_buffer, staging_buffer_memory) = create_buffer(
-        instance,
-        device,
-        data,
-        size,
-        vk::BufferUsageFlags::TRANSFER_SRC,
-        vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-    )?;
-
-    let memory = device.map_memory(
-        staging_buffer_memory,
-        0,
-        size,
-        vk::MemoryMapFlags::empty(),
-    )?;
-
-    memcpy(pixels.as_ptr(), memory.cast(), pixels.len());
-
-    device.unmap_memory(staging_buffer_memory);
-
-    let (texture_image, texture_image_memory) = create_image(
-        instance,
-        device,
-        data,
-        width,
-        height,
-        vk::Format::R8G8B8A8_SRGB,
-        vk::ImageTiling::OPTIMAL,
-        vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL,
-    )?;
-
-    data.texture_image = texture_image;
-    data.texture_image_memory = texture_image_memory;
-
-    transition_image_layout(
-        device,
-        data,
-        data.texture_image,
-        vk::Format::R8G8B8A8_SRGB,
-        vk::ImageLayout::UNDEFINED,
-        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-    )?;
-    
-    copy_buffer_to_image(
-        device,
-        data,
-        staging_buffer,
-        data.texture_image,
-        width,
-        height,
-    )?;
-
-    transition_image_layout(
-        device,
-        data,
-        data.texture_image,
-        vk::Format::R8G8B8A8_SRGB,
-        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-        vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-    )?;
-
-    device.destroy_buffer(staging_buffer, None);
-    device.free_memory(staging_buffer_memory, None);
-
-    Ok(())
-}
-
-pub unsafe fn create_texture_image_view(device: &Device, data: &mut AppData) -> Result<()> {
-    data.texture_image_view = create_image_view(
-        device,
-        data.texture_image,
-        vk::Format::R8G8B8A8_SRGB,
-        vk::ImageAspectFlags::COLOR,
-    )?;
-
-    Ok(())
-}
 
 pub unsafe fn create_image(
     instance: &Instance,
