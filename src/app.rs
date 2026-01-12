@@ -23,9 +23,7 @@ use log::*;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtension, InputChainStruct, KhrDynamicRenderingExtension};
-use vulkanalia::vk::KhrSurfaceExtension;
-use vulkanalia::vk::KhrSwapchainExtension;
+use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, InputChainStruct, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
 use vulkanalia::bytecode::Bytecode;
 
 use std::mem::size_of;
@@ -84,21 +82,21 @@ impl App {
         // create_framebuffers(&device, &mut data)?;
 
         let translation1 = Vector3 { x: 1.0, y: 0.0, z: 0.0 };
-        let rotation1 = Quaternion::from(Euler {
+        let rotation1 = Euler {
             x: Rad(0.0),
             y: Rad(std::f32::consts::FRAC_PI_2),
             z: Rad(0.0),
-        });
+        };
         let scale1 = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
         let cpu_render_object1 = CpuRenderObject::new("assets/cube.obj", "assets/cube.png", translation1, rotation1, scale1)?;
         let gpu_render_object1 = GpuRenderObject::new(&instance, &device, &data, &cpu_render_object1)?;
 
         let translation2 = Vector3 { x: -2.0, y: 0.0, z: 1.0 };
-        let rotation2 = Quaternion::from(Euler {
+        let rotation2 = Euler {
             x: Rad(0.0),
-            y: Rad(0.0),
+            y: Rad(std::f32::consts::FRAC_PI_2),
             z: Rad(0.0),
-        });
+        };
         let scale2 = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
         let cpu_render_object2 = CpuRenderObject::new("assets/teapot.obj", "assets/viking_room.png", translation2, rotation2, scale2)?;
         let gpu_render_object2 = GpuRenderObject::new(&instance, &device, &data, &cpu_render_object2)?;
@@ -413,7 +411,10 @@ impl App {
                 &[],
             );
 
-            let model = Self::trs_matrix(gpu_render_object.translation, gpu_render_object.rotation, gpu_render_object.scale);
+            let mut new_rotation = gpu_render_object.rotation.clone();
+            new_rotation.y *= time;
+            let new_quaternion = Quaternion::from(new_rotation);
+            let model = Self::trs_matrix(gpu_render_object.translation, new_quaternion, gpu_render_object.scale);
             let model_bytes = std::slice::from_raw_parts(
                 &model as *const Mat4 as *const u8,
                 size_of::<Mat4>()

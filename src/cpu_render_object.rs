@@ -17,13 +17,10 @@ use log::*;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::ExtDebugUtilsExtension;
-use vulkanalia::vk::KhrSurfaceExtension;
-use vulkanalia::vk::KhrSwapchainExtension;
 use vulkanalia::bytecode::Bytecode;
 
 use std::mem::size_of;
-use cgmath::{Quaternion, Vector3, vec2, vec3};
+use cgmath::{Euler, Quaternion, Rad, Vector3, vec2, vec3};
 
 use crate::app::AppData;
 use crate::vertex::Vertex;
@@ -44,12 +41,12 @@ pub struct CpuRenderObject {
     pub width: u32,
     pub height: u32,
     pub translation: Vector3<f32>,
-    pub rotation: Quaternion<f32>,
+    pub rotation: Euler<Rad<f32>>,
     pub scale: Vector3<f32>,
 }
 
 impl CpuRenderObject {
-    pub fn new(model_name: &str, image_name: &str, translation: Vector3<f32>, rotation: Quaternion<f32>, scale: Vector3<f32>) -> Result<Self> {
+    pub fn new(model_name: &str, image_name: &str, translation: Vector3<f32>, rotation: Euler<Rad<f32>>, scale: Vector3<f32>) -> Result<Self> {
         let (indices, vertices) = load_model(model_name)?;
         let (pixels, width, height) = load_image(image_name)?;
 

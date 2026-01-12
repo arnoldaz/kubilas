@@ -16,13 +16,10 @@ use std::os::raw::c_void;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::ExtDebugUtilsExtension;
-use vulkanalia::vk::KhrSurfaceExtension;
-use vulkanalia::vk::KhrSwapchainExtension;
 use vulkanalia::bytecode::Bytecode;
 
 use std::mem::size_of;
-use cgmath::{Quaternion, Vector3, vec2, vec3};
+use cgmath::{Euler, Quaternion, Rad, Vector3, vec2, vec3};
 
 use crate::app::AppData;
 use crate::cpu_render_object::{self, CpuRenderObject};
@@ -49,7 +46,7 @@ pub struct GpuRenderObject {
     pub index_buffer: vk::Buffer,
     pub index_buffer_memory: vk::DeviceMemory,
     pub translation: Vector3<f32>,
-    pub rotation: Quaternion<f32>,
+    pub rotation: Euler<Rad<f32>>,
     pub scale: Vector3<f32>,
 }
 
