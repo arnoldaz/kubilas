@@ -14,6 +14,7 @@ use winit::event_loop::EventLoop;
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowBuilder};
 
+use std::any::Any;
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::c_void;
@@ -22,7 +23,7 @@ use log::*;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::ExtDebugUtilsExtension;
+use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtension, InputChainStruct, KhrDynamicRenderingExtension};
 use vulkanalia::vk::KhrSurfaceExtension;
 use vulkanalia::vk::KhrSwapchainExtension;
 use vulkanalia::bytecode::Bytecode;
@@ -40,7 +41,7 @@ use crate::gpu_render_object::{self, GpuRenderObject};
 use crate::image::{create_texture_sampler};
 use crate::swapchain::{create_swapchain, create_swapchain_image_views};
 use crate::vertex::Vertex;
-use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, VALIDATION_ENABLED, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_framebuffers, create_instance, create_logical_device, create_pipeline, create_render_pass, create_sync_objects, create_uniform_buffers, pick_physical_device};
+use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, VALIDATION_ENABLED, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_instance, create_logical_device, create_pipeline, create_sync_objects, create_uniform_buffers, pick_physical_device};
 
 use std::ptr::copy_nonoverlapping as memcpy;
 
@@ -75,12 +76,12 @@ impl App {
         let device = create_logical_device(&entry, &instance, &mut data)?;
         create_swapchain(window, &instance, &device, &mut data)?;
         create_swapchain_image_views(&device, &mut data)?;
-        create_render_pass(&instance, &device, &mut data)?;
+        // create_render_pass(&instance, &device, &mut data)?;
         create_descriptor_set_layout(&device, &mut data)?;
-        create_pipeline(&device, &mut data)?;
+        create_pipeline(&instance, &device, &mut data)?;
         create_command_pool(&instance, &device, &mut data)?;
         create_depth_objects(&instance, &device, &mut data)?;
-        create_framebuffers(&device, &mut data)?;
+        // create_framebuffers(&device, &mut data)?;
 
         let translation1 = Vector3 { x: 1.0, y: 0.0, z: 0.0 };
         let rotation1 = Quaternion::from(Euler {
@@ -211,13 +212,13 @@ impl App {
         self.data.uniform_buffers_memory
             .iter()
             .for_each(|m| self.device.free_memory(*m, None));
-        self.data.framebuffers
-            .iter()
-            .for_each(|f| self.device.destroy_framebuffer(*f, None));
+        // self.data.framebuffers
+        //     .iter()
+        //     .for_each(|f| self.device.destroy_framebuffer(*f, None));
         self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
         self.device.destroy_pipeline(self.data.pipeline, None);
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
-        self.device.destroy_render_pass(self.data.render_pass, None);
+        // self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain_image_views
             .iter()
             .for_each(|v| self.device.destroy_image_view(*v, None));
@@ -270,10 +271,8 @@ impl App {
 
         create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
         create_swapchain_image_views(&self.device, &mut self.data)?;
-        create_render_pass(&self.instance, &self.device, &mut self.data)?;
-        create_pipeline(&self.device, &mut self.data)?;
+        create_pipeline(&self.instance, &self.device, &mut self.data)?;
         create_depth_objects(&self.instance, &self.device, &mut self.data)?;
-        create_framebuffers(&self.device, &mut self.data)?;
         create_uniform_buffers(&self.instance, &self.device, &mut self.data)?;
         create_descriptor_pool(&self.device, &mut self.data)?;
         create_descriptor_sets(&self.device, &mut self.data, &self.gpu_render_objects)?;
@@ -295,13 +294,9 @@ impl App {
         self.data.uniform_buffers_memory
             .iter()
             .for_each(|m| self.device.free_memory(*m, None));
-        self.data.framebuffers
-            .iter()
-            .for_each(|f| self.device.destroy_framebuffer(*f, None));
         self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
         self.device.destroy_pipeline(self.data.pipeline, None);
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
-        self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain_image_views
             .iter()
             .for_each(|v| self.device.destroy_image_view(*v, None));
@@ -329,11 +324,7 @@ impl App {
         )?;
 
         let time = self.start.elapsed().as_secs_f32();
-        
-        // let model = Mat4::from_axis_angle(
-        //     vec3(0.0, 0.0, 10.0),
-        //     Deg(90.0) * time / 2.0
-        // );
+
 
         let info = vk::CommandBufferBeginInfo::builder()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
@@ -357,17 +348,56 @@ impl App {
             },
         };
 
-        let clear_values = &[color_clear_value, depth_clear_value];
+        let color_attachment = vk::RenderingAttachmentInfo::builder()
+            .image_view(self.data.swapchain_image_views[image_index])
+            .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::STORE)
+            .clear_value(color_clear_value);
+        let color_attachments = [color_attachment];
 
-        let info = vk::RenderPassBeginInfo::builder()
-            .render_pass(self.data.render_pass)
-            .framebuffer(self.data.framebuffers[image_index])
+        let depth_attachment = vk::RenderingAttachmentInfo::builder()
+            .image_view(self.data.depth_image_view)
+            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .clear_value(depth_clear_value);
+
+        let rendering_info = vk::RenderingInfo::builder()
             .render_area(render_area)
-            .clear_values(clear_values);
+            .layer_count(1)
+            .color_attachments(&color_attachments)
+            .depth_attachment(&depth_attachment);
 
-        self.device.cmd_begin_render_pass(command_buffer, &info, vk::SubpassContents::INLINE);
+        let color_range = vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer: 0,
+            layer_count: 1,
+        };
+
+        let barrier = vk::ImageMemoryBarrier2::builder()
+            .old_layout(vk::ImageLayout::UNDEFINED)
+            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .src_access_mask(vk::AccessFlags2::empty())
+            .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_READ | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
+            .image(self.data.swapchain_images[image_index])
+            .subresource_range(color_range)
+            .src_stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE)
+            .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT);
+
+        let binding = [barrier];
+        let dependency_info = vk::DependencyInfo::builder()
+            .image_memory_barriers(&binding);
+
+        self.device.cmd_pipeline_barrier2(
+            command_buffer,
+            &dependency_info
+        );
+
+        self.device.cmd_begin_rendering(command_buffer, &rendering_info);
         self.device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, self.data.pipeline);
-
 
         for (object_index, gpu_render_object) in self.gpu_render_objects.iter().enumerate() {
             // TODO: have only 1 buffer for both and use offset instead, nvidia dev guide says it's very bad now
@@ -397,11 +427,6 @@ impl App {
                 model_bytes,
             );
 
-            // let object_index_number = object_index as u32;
-            // let frag_bytes = std::slice::from_raw_parts(
-            //     &object_index_number as *const u32 as *const u8,
-            //     size_of::<u32>()
-            // );
             let obj_index_bytes = std::slice::from_raw_parts(&(object_index as u32) as *const u32 as *const u8, 4);
             self.device.cmd_push_constants(
                 command_buffer,
@@ -414,61 +439,28 @@ impl App {
             self.device.cmd_draw_indexed(command_buffer, gpu_render_object.indices_count, 1, 0, 0, 0);
         }
 
+        self.device.cmd_end_rendering(command_buffer);
 
-        // // first cube
-        // let model = Self::trs_matrix(
-        //     Vector3 { x: 1.0, y: 0.0, z: 0.0 },
-        //     Quaternion::from(Euler {
-        //         x: Rad(0.0),
-        //         y: Rad(std::f32::consts::FRAC_PI_2) * time,
-        //         z: Rad(0.0),
-        //     }),
-        //     Vector3 { x: 1.0, y: 1.0, z: 1.0 },
-        // );
+        // TODO: abstract this bullshit
+        let barrier = vk::ImageMemoryBarrier2::builder()
+            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+            .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
+            .dst_access_mask(vk::AccessFlags2::empty())
+            .image(self.data.swapchain_images[image_index])
+            .subresource_range(color_range)
+            .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
+            .dst_stage_mask(vk::PipelineStageFlags2::BOTTOM_OF_PIPE);
 
-        // let model_bytes = std::slice::from_raw_parts(
-        //     &model as *const Mat4 as *const u8,
-        //     size_of::<Mat4>()
-        // );
+        let binding = [barrier];
+        let dependency_info = vk::DependencyInfo::builder()
+            .image_memory_barriers(&binding);
 
-        // self.device.cmd_push_constants(
-        //     command_buffer,
-        //     self.data.pipeline_layout,
-        //     vk::ShaderStageFlags::VERTEX,
-        //     0,
-        //     model_bytes,
-        // );
+        self.device.cmd_pipeline_barrier2(
+            command_buffer,
+            &dependency_info
+        );
 
-        // self.device.cmd_draw_indexed(command_buffer, self.gpu_render_object.indices_count, 1, 0, 0, 0);
-
-        // // second cube
-        // let model = Self::trs_matrix(
-        //     Vector3 { x: -2.0, y: 0.0, z: 1.0 },
-        //     Quaternion::from(Euler {
-        //         x: Rad(0.0),
-        //         y: Rad(0.0),
-        //         z: Rad(std::f32::consts::FRAC_PI_2) * time / 2.0,
-        //     }),
-        //     Vector3 { x: 1.0, y: 1.0, z: 1.0 },
-        // );
-
-        // let model_bytes = std::slice::from_raw_parts(
-        //     &model as *const Mat4 as *const u8,
-        //     size_of::<Mat4>()
-        // );
-
-        // self.device.cmd_push_constants(
-        //     command_buffer,
-        //     self.data.pipeline_layout,
-        //     vk::ShaderStageFlags::VERTEX,
-        //     0,
-        //     model_bytes,
-        // );
-
-        // self.device.cmd_draw_indexed(command_buffer, self.gpu_render_object.indices_count, 1, 0, 0, 0);
-
-
-        self.device.cmd_end_render_pass(command_buffer);
         self.device.end_command_buffer(command_buffer)?;
 
         Ok(())
@@ -537,11 +529,9 @@ pub struct AppData {
     pub swapchain: vk::SwapchainKHR,
     pub swapchain_images: Vec<vk::Image>,
     pub swapchain_image_views: Vec<vk::ImageView>,
-    pub render_pass: vk::RenderPass,
     pub descriptor_set_layout: vk::DescriptorSetLayout,
     pub pipeline_layout: vk::PipelineLayout,
     pub pipeline: vk::Pipeline,
-    pub framebuffers: Vec<vk::Framebuffer>,
     pub command_pool: vk::CommandPool,
     pub command_buffers: Vec<vk::CommandBuffer>,
     pub image_available_semaphores: Vec<vk::Semaphore>,

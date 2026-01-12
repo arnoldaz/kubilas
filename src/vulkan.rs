@@ -80,7 +80,7 @@ pub unsafe fn create_instance(window: &Window, entry: &Entry, data: &mut AppData
         .application_version(vk::make_version(1, 0, 0))
         .engine_name(b"Kubilas\0")
         .engine_version(vk::make_version(1, 0, 0))
-        .api_version(vk::make_version(1, 0, 0));
+        .api_version(vk::make_version(1, 3, 0));
 
     let mut extensions = vk_window::get_required_instance_extensions(window)
         .iter()
@@ -234,14 +234,24 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
         .map(|n| n.as_ptr())
         .collect::<Vec<_>>();
 
-    let features = vk::PhysicalDeviceFeatures::builder()
-        .sampler_anisotropy(true);
+    
+
+    let mut features13 = vk::PhysicalDeviceVulkan13Features::builder()
+        .dynamic_rendering(true)
+        .synchronization2(true);
+
+    let mut features2 = vk::PhysicalDeviceFeatures2::builder()
+        .features(
+            vk::PhysicalDeviceFeatures::builder()
+                .sampler_anisotropy(true)
+        )
+        .push_next(&mut features13);
 
     let info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_infos)
         .enabled_layer_names(&layers)
         .enabled_extension_names(&extensions)
-        .enabled_features(&features);
+        .push_next(&mut features2);
 
     let device = instance.create_device(data.physical_device, &info, None)?;
     data.graphics_queue = device.get_device_queue(indices.graphics, 0);
@@ -285,7 +295,7 @@ impl QueueFamilyIndices {
 }
 
 
-pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()> {
+pub unsafe fn create_pipeline(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
     let vert = include_bytes!("../target/shaders/vert.spv");
     let frag = include_bytes!("../target/shaders/frag.spv");
 
@@ -388,7 +398,16 @@ pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()>
         .stencil_test_enable(false);
         
     let stages = &[vert_stage, frag_stage];
+
+    
+    let color_formats = &[data.swapchain_format];
+    let mut pipeline_rendering_info = vk::PipelineRenderingCreateInfo::builder()
+        .color_attachment_formats(color_formats)
+        .depth_attachment_format(get_depth_format(instance, data)?)
+        .stencil_attachment_format(get_depth_format(instance, data)?);
+
     let info = vk::GraphicsPipelineCreateInfo::builder()
+        .push_next(&mut pipeline_rendering_info)
         .stages(stages)
         .vertex_input_state(&vertex_input_state)
         .input_assembly_state(&input_assembly_state)
@@ -398,8 +417,7 @@ pub unsafe fn create_pipeline(device: &Device, data: &mut AppData) -> Result<()>
         .depth_stencil_state(&depth_stencil_state)
         .color_blend_state(&color_blend_state)
         .layout(data.pipeline_layout)
-        .render_pass(data.render_pass)
-        .subpass(0)
+        .render_pass(vk::RenderPass::null())
         .base_pipeline_handle(vk::Pipeline::null()) // Optional.
         .base_pipeline_index(-1);                   // Optional.
 
@@ -421,86 +439,6 @@ pub unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<v
     Ok(device.create_shader_module(&info, None)?)
 }
 
-pub unsafe fn create_render_pass(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
-    let color_attachment = vk::AttachmentDescription::builder()
-        .format(data.swapchain_format)
-        .samples(vk::SampleCountFlags::_1)
-        .load_op(vk::AttachmentLoadOp::CLEAR)
-        .store_op(vk::AttachmentStoreOp::STORE)
-        .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-        .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-        .initial_layout(vk::ImageLayout::UNDEFINED)
-        .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
-
-    let color_attachment_ref = vk::AttachmentReference::builder()
-        .attachment(0)
-        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
-
-    let dependency = vk::SubpassDependency::builder()
-        .src_subpass(vk::SUBPASS_EXTERNAL)
-        .dst_subpass(0)
-        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS)
-        .src_access_mask(vk::AccessFlags::empty())
-        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS)
-        .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE);
-
-    let depth_stencil_attachment = vk::AttachmentDescription::builder()
-        .format(get_depth_format(instance, data)?)
-        .samples(vk::SampleCountFlags::_1)
-        .load_op(vk::AttachmentLoadOp::CLEAR)
-        .store_op(vk::AttachmentStoreOp::DONT_CARE)
-        .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-        .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-        .initial_layout(vk::ImageLayout::UNDEFINED)
-        .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-    let depth_stencil_attachment_ref = vk::AttachmentReference::builder()
-        .attachment(1)
-        .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-    let color_attachments = &[color_attachment_ref];
-    let subpass = vk::SubpassDescription::builder()
-        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-        .color_attachments(color_attachments)
-        .depth_stencil_attachment(&depth_stencil_attachment_ref);
-
-
-    let attachments = &[color_attachment, depth_stencil_attachment];
-    let subpasses = &[subpass];
-    let dependencies = &[dependency];
-
-    let info = vk::RenderPassCreateInfo::builder()
-        .attachments(attachments)
-        .subpasses(subpasses)
-        .dependencies(dependencies);
-
-
-    data.render_pass = device.create_render_pass(&info, None)?;
-
-
-
-    Ok(())
-}
-
-pub unsafe fn create_framebuffers(device: &Device, data: &mut AppData) -> Result<()> {
-    data.framebuffers = data
-        .swapchain_image_views
-        .iter()
-        .map(|i| {
-            let attachments = &[*i, data.depth_image_view];
-            let create_info = vk::FramebufferCreateInfo::builder()
-                .render_pass(data.render_pass)
-                .attachments(attachments)
-                .width(data.swapchain_extent.width)
-                .height(data.swapchain_extent.height)
-                .layers(1);
-            
-            device.create_framebuffer(&create_info, None)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(())
-}
 
 pub unsafe fn create_command_pool(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
     let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
@@ -518,80 +456,9 @@ pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Res
     let allocate_info = vk::CommandBufferAllocateInfo::builder()
         .command_pool(data.command_pool)
         .level(vk::CommandBufferLevel::PRIMARY)
-        .command_buffer_count(data.framebuffers.len() as u32);
+        .command_buffer_count(data.swapchain_image_views.len() as u32);
 
     data.command_buffers = device.allocate_command_buffers(&allocate_info)?;
-
-    // let model = Mat4::from_axis_angle(
-    //     vec3(0.0, 0.0, 1.0),
-    //     Deg(0.0)
-    // );
-
-    // let model_bytes = std::slice::from_raw_parts(
-    //     &model as *const Mat4 as *const u8,
-    //     size_of::<Mat4>()
-    // );
-
-    // for (i, command_buffer) in data.command_buffers.iter().enumerate() {
-    //     let inheritance = vk::CommandBufferInheritanceInfo::builder();
-    
-    //     let info = vk::CommandBufferBeginInfo::builder()
-    //         .flags(vk::CommandBufferUsageFlags::empty()) // Optional.
-    //         .inheritance_info(&inheritance);             // Optional.
-    
-    //     device.begin_command_buffer(*command_buffer, &info)?;
-
-    //     let render_area = vk::Rect2D::builder()
-    //         .offset(vk::Offset2D::default())
-    //         .extent(data.swapchain_extent);
-
-    //     let color_clear_value = vk::ClearValue {
-    //         color: vk::ClearColorValue {
-    //             float32: [0.0, 0.0, 0.0, 1.0],
-    //         },
-    //     };
-
-    //     let depth_clear_value = vk::ClearValue {
-    //         depth_stencil: vk::ClearDepthStencilValue {
-    //             depth: 1.0,
-    //             stencil: 0,
-    //         },
-    //     };
-
-    //     let clear_values = &[color_clear_value, depth_clear_value];
-    //     let info = vk::RenderPassBeginInfo::builder()
-    //         .render_pass(data.render_pass)
-    //         .framebuffer(data.framebuffers[i])
-    //         .render_area(render_area)
-    //         .clear_values(clear_values);
-
-    //     device.cmd_begin_render_pass(
-    //         *command_buffer, &info, vk::SubpassContents::INLINE);
-
-    //     device.cmd_bind_pipeline(
-    //         *command_buffer, vk::PipelineBindPoint::GRAPHICS, data.pipeline);
-    //     device.cmd_bind_vertex_buffers(*command_buffer, 0, &[data.vertex_buffer], &[0]);
-    //     device.cmd_bind_index_buffer(*command_buffer, data.index_buffer, 0, vk::IndexType::UINT32);
-    //     // device.cmd_draw(*command_buffer, VERTICES.len() as u32, 1, 0, 0);
-    //     device.cmd_bind_descriptor_sets(
-    //         *command_buffer,
-    //         vk::PipelineBindPoint::GRAPHICS,
-    //         data.pipeline_layout,
-    //         0,
-    //         &[data.descriptor_sets[i]],
-    //         &[],
-    //     );
-    //     device.cmd_push_constants(
-    //         *command_buffer,
-    //         data.pipeline_layout,
-    //         vk::ShaderStageFlags::VERTEX,
-    //         0,
-    //         model_bytes,
-    //     );
-    //     device.cmd_draw_indexed(*command_buffer, data.indices.len() as u32, 1, 0, 0, 0);
-    //     device.cmd_end_render_pass(*command_buffer);
-    //     device.end_command_buffer(*command_buffer)?;
-    // }
 
     Ok(())
 }
@@ -924,9 +791,9 @@ unsafe fn get_supported_format(
 
 unsafe fn get_depth_format(instance: &Instance, data: &AppData) -> Result<vk::Format> {
     let candidates = &[
-        vk::Format::D32_SFLOAT,
-        vk::Format::D32_SFLOAT_S8_UINT,
         vk::Format::D24_UNORM_S8_UINT,
+        vk::Format::D32_SFLOAT_S8_UINT,
+        vk::Format::D32_SFLOAT,
     ];
 
     get_supported_format(

@@ -38,7 +38,7 @@ type Mat4 = cgmath::Matrix4<f32>;
 use crate::app::AppData;
 use crate::cpu_render_object::{CpuRenderObject};
 use crate::swapchain::{create_swapchain, create_swapchain_image_views};
-use crate::vulkan::{begin_single_time_commands, create_buffer, create_command_buffers, create_command_pool, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_framebuffers, create_instance, create_logical_device, create_pipeline, create_render_pass, create_sync_objects, create_uniform_buffers, end_single_time_commands, get_memory_type_index, pick_physical_device, UniformBufferObject, MAX_FRAMES_IN_FLIGHT, VALIDATION_ENABLED};
+use crate::vulkan::{begin_single_time_commands, create_buffer, create_command_buffers, create_command_pool, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_instance, create_logical_device, create_pipeline, create_sync_objects, create_uniform_buffers, end_single_time_commands, get_memory_type_index, pick_physical_device, UniformBufferObject, MAX_FRAMES_IN_FLIGHT, VALIDATION_ENABLED};
 
 use std::ptr::copy_nonoverlapping as memcpy;
 
