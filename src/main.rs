@@ -47,8 +47,6 @@ use std::ptr::copy_nonoverlapping as memcpy;
 
 // NEXT: https://kylemayes.github.io/vulkanalia/vertex/staging_buffer.html
 
-// TODO: use dynamic rendering
-
 fn main() -> Result<()> {
     pretty_env_logger::init();
 

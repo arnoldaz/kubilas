@@ -397,6 +397,21 @@ impl App {
         self.device.cmd_begin_rendering(command_buffer, &rendering_info);
         self.device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, self.data.pipeline);
 
+        let viewport = vk::Viewport::builder()
+            .x(0.0)
+            .y(0.0)
+            .width(self.data.swapchain_extent.width as f32)
+            .height(self.data.swapchain_extent.height as f32)
+            .min_depth(0.0)
+            .max_depth(1.0);
+
+        let scissor = vk::Rect2D::builder()
+            .offset(vk::Offset2D { x: 0, y: 0 })
+            .extent(self.data.swapchain_extent);
+
+        self.device.cmd_set_viewport(command_buffer, 0, &[viewport]);
+        self.device.cmd_set_scissor(command_buffer, 0, &[scissor]);
+
         for (object_index, gpu_render_object) in self.gpu_render_objects.iter().enumerate() {
             // TODO: have only 1 buffer for both and use offset instead, nvidia dev guide says it's very bad now
             self.device.cmd_bind_vertex_buffers(command_buffer, 0, &[gpu_render_object.vertex_buffer], &[0]);

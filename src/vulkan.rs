@@ -318,25 +318,16 @@ pub unsafe fn create_pipeline(instance: &Instance, device: &Device, data: &mut A
         .vertex_binding_descriptions(binding_descriptions)
         .vertex_attribute_descriptions(&attribute_descriptions);
 
-    // TODO: dynamic state
     let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
         .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
         .primitive_restart_enable(false);
-    let viewport = vk::Viewport::builder()
-        .x(0.0)
-        .y(0.0)
-        .width(data.swapchain_extent.width as f32)
-        .height(data.swapchain_extent.height as f32)
-        .min_depth(0.0)
-        .max_depth(1.0);
-    let scissor = vk::Rect2D::builder()
-        .offset(vk::Offset2D { x: 0, y: 0 })
-        .extent(data.swapchain_extent);
-    let viewports = &[viewport];
-    let scissors = &[scissor];
+
     let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
-        .viewports(viewports)
-        .scissors(scissors);
+        .viewport_count(1)
+        .scissor_count(1);
+
+    let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::builder()
+        .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
 
     let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
         .depth_clamp_enable(false)
@@ -416,6 +407,7 @@ pub unsafe fn create_pipeline(instance: &Instance, device: &Device, data: &mut A
         .color_blend_state(&color_blend_state)
         .layout(data.pipeline_layout)
         .render_pass(vk::RenderPass::null())
+        .dynamic_state(&dynamic_state_info)
         .base_pipeline_handle(vk::Pipeline::null()) // Optional.
         .base_pipeline_index(-1);                   // Optional.
 
