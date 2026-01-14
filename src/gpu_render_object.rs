@@ -48,12 +48,12 @@ pub struct GpuRenderObject {
     pub translation: Vector3<f32>,
     pub rotation: Euler<Rad<f32>>,
     pub scale: Vector3<f32>,
+    pub sampler_index: u32,
 }
 
 impl GpuRenderObject {
-    pub unsafe fn new(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &AppData, cpu_render_object: &CpuRenderObject) -> Result<Self> {
-        let (texture_image, texture_image_memory) = create_texture_image(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
-        let texture_image_view = create_texture_image_view(vulkan_device, texture_image)?;
+    pub unsafe fn new(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &mut AppData, cpu_render_object: &CpuRenderObject) -> Result<Self> {
+        let (texture_image, texture_image_memory, texture_image_view, sampler_index) = create_texture_image(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
 
         // TODO: check how can I pass rust vector readonly to function
         let (vertex_buffer, vertex_buffer_memory) = create_vertex_buffer(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
@@ -71,6 +71,7 @@ impl GpuRenderObject {
             translation: cpu_render_object.translation,
             rotation: cpu_render_object.rotation,
             scale: cpu_render_object.scale,
+            sampler_index
         })    
     }
 
@@ -87,7 +88,7 @@ impl GpuRenderObject {
 }
 
 
-pub unsafe fn create_texture_image(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &AppData, cpu_render_object: &CpuRenderObject) -> Result<(vk::Image, vk::DeviceMemory)> {
+pub unsafe fn create_texture_image(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &mut AppData, cpu_render_object: &CpuRenderObject) -> Result<(vk::Image, vk::DeviceMemory, vk::ImageView, u32)> {
     // TODO: consider using vkMemoryToImageCopy instead of buffer after upgrading to 1.4
 
     let size = cpu_render_object.pixels.len() as u64;
@@ -157,10 +158,6 @@ pub unsafe fn create_texture_image(vulkan_instance: &Instance, vulkan_device: &D
     vulkan_device.destroy_buffer(staging_buffer, None);
     vulkan_device.free_memory(staging_buffer_memory, None);
 
-    Ok((texture_image, texture_image_memory))
-}
-
-pub unsafe fn create_texture_image_view(vulkan_device: &Device, texture_image: vk::Image) -> Result<vk::ImageView> {
     let texture_image_view = create_image_view(
         vulkan_device,
         texture_image,
@@ -168,8 +165,25 @@ pub unsafe fn create_texture_image_view(vulkan_device: &Device, texture_image: v
         vk::ImageAspectFlags::COLOR,
     )?;
 
-    Ok(texture_image_view)
+    app_data.sampler_index += 1;
+    let image_info = vk::DescriptorImageInfo::builder()
+        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+        .image_view(texture_image_view)
+        .sampler(app_data.texture_sampler);
+
+    let image_infos = &[image_info];
+    let sampler_write = vk::WriteDescriptorSet::builder()
+        .dst_set(app_data.descriptor_set)
+        .dst_binding(1)
+        .dst_array_element(app_data.sampler_index as u32)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .image_info(image_infos);
+
+    vulkan_device.update_descriptor_sets(&[sampler_write], &[] as &[vk::CopyDescriptorSet]);
+
+    Ok((texture_image, texture_image_memory, texture_image_view, app_data.sampler_index as u32))
 }
+
 
 pub unsafe fn create_vertex_buffer(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &AppData, cpu_render_object: &CpuRenderObject) -> Result<(vk::Buffer, vk::DeviceMemory)> {
     let size = (size_of::<Vertex>() * cpu_render_object.vertices.len()) as u64;

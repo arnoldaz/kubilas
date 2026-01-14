@@ -232,7 +232,17 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
         .map(|n| n.as_ptr())
         .collect::<Vec<_>>();
 
-    
+    let mut features12 = vk::PhysicalDeviceVulkan12Features::builder()
+        .runtime_descriptor_array(true)
+        .descriptor_binding_partially_bound(true)
+        .descriptor_binding_sampled_image_update_after_bind(true)
+        .descriptor_binding_storage_image_update_after_bind(true)
+        .descriptor_binding_uniform_buffer_update_after_bind(true)
+        .descriptor_binding_variable_descriptor_count(true)
+        .shader_sampled_image_array_non_uniform_indexing(true)
+        .shader_storage_buffer_array_non_uniform_indexing(true)
+        .shader_uniform_buffer_array_non_uniform_indexing(true)
+        .descriptor_indexing(true);
 
     let mut features13 = vk::PhysicalDeviceVulkan13Features::builder()
         .dynamic_rendering(true)
@@ -243,6 +253,7 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
             vk::PhysicalDeviceFeatures::builder()
                 .sampler_anisotropy(true)
         )
+        .push_next(&mut features12)
         .push_next(&mut features13);
 
     let info = vk::DeviceCreateInfo::builder()
@@ -467,6 +478,7 @@ pub unsafe fn create_sync_objects(device: &Device, data: &mut AppData) -> Result
     }
     
     let image_count = data.swapchain_images.len();
+    println!("{} iamge count", image_count);
     for _ in 0..image_count {
         data.render_finished_semaphores.push(device.create_semaphore(&semaphore_info, None)?);
     }
@@ -605,18 +617,28 @@ pub unsafe fn create_descriptor_set_layout(
     let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(0)
         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-        .descriptor_count(1)
+        .descriptor_count(65536)
         .stage_flags(vk::ShaderStageFlags::VERTEX);
 
     let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
         .binding(1)
         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(2)
+        .descriptor_count(65536)
         .stage_flags(vk::ShaderStageFlags::FRAGMENT);
 
     let bindings = &[ubo_binding, sampler_binding];
+
+    let binding_flags = &[
+        vk::DescriptorBindingFlags::PARTIALLY_BOUND | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+        vk::DescriptorBindingFlags::PARTIALLY_BOUND | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND
+    ];
+    let mut binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo::builder()
+        .binding_flags(binding_flags);
+
     let info = vk::DescriptorSetLayoutCreateInfo::builder()
-        .bindings(bindings);
+        .bindings(bindings)
+        .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+        .push_next(&mut binding_flags_info);
     
     data.descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
 
@@ -631,7 +653,9 @@ pub unsafe fn create_uniform_buffers(
     data.uniform_buffers.clear();
     data.uniform_buffers_memory.clear();
 
-    for _ in 0..data.swapchain_images.len() {
+    for i in 0..MAX_FRAMES_IN_FLIGHT {
+        data.ubo_index += 1;
+
         let (uniform_buffer, uniform_buffer_memory) = create_buffer(
             instance,
             device,
@@ -643,6 +667,21 @@ pub unsafe fn create_uniform_buffers(
 
         data.uniform_buffers.push(uniform_buffer);
         data.uniform_buffers_memory.push(uniform_buffer_memory);
+
+        let info = vk::DescriptorBufferInfo::builder()
+            .buffer(data.uniform_buffers[i])
+            .offset(0)
+            .range(size_of::<UniformBufferObject>() as u64);
+
+        let buffer_info = &[info];
+        let ubo_write = vk::WriteDescriptorSet::builder()
+            .dst_set(data.descriptor_set)
+            .dst_binding(0)
+            .dst_array_element(data.ubo_index as u32)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .buffer_info(buffer_info);
+
+        device.update_descriptor_sets(&[ubo_write], &[] as &[vk::CopyDescriptorSet]);
     }
 
     Ok(())
@@ -652,70 +691,33 @@ pub unsafe fn create_uniform_buffers(
 pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Result<()> {
     let ubo_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::UNIFORM_BUFFER)
-        .descriptor_count(data.swapchain_images.len() as u32);
+        .descriptor_count(65536);
     
     let sampler_size = vk::DescriptorPoolSize::builder()
         .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(data.swapchain_images.len() as u32);
+        .descriptor_count(65536);
 
     let pool_sizes = &[ubo_size, sampler_size];
     let info = vk::DescriptorPoolCreateInfo::builder()
         .pool_sizes(pool_sizes)
-        .max_sets(data.swapchain_images.len() as u32);
+        .max_sets(1)
+        .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND);
 
     data.descriptor_pool = device.create_descriptor_pool(&info, None)?;
 
     Ok(())
 }
 
-pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData, gpu_render_objects: &Vec<GpuRenderObject>) -> Result<()> {
-    let layouts = vec![data.descriptor_set_layout; data.swapchain_images.len()];
+pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData) -> Result<()> {
+    let layouts = &[data.descriptor_set_layout];
     let info = vk::DescriptorSetAllocateInfo::builder()
         .descriptor_pool(data.descriptor_pool)
-        .set_layouts(&layouts);
+        .set_layouts(layouts);
 
-    data.descriptor_sets = device.allocate_descriptor_sets(&info)?;
+    data.descriptor_set = device.allocate_descriptor_sets(&info)?[0];
 
-    for i in 0..data.swapchain_images.len() {
-        let info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.uniform_buffers[i])
-            .offset(0)
-            .range(size_of::<UniformBufferObject>() as u64);
-
-        let buffer_info = &[info];
-        let ubo_write = vk::WriteDescriptorSet::builder()
-            .dst_set(data.descriptor_sets[i])
-            .dst_binding(0)
-            .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .buffer_info(buffer_info);
-
-        // let info = vk::DescriptorImageInfo::builder()
-        //     .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-        //     .image_view(gpu_render_object.texture_image_view)
-        //     .sampler(data.texture_sampler);
-
-        let image_infos: Vec<vk::DescriptorImageInfo> = gpu_render_objects
-            .iter()
-            .map(|gpu_render_object| {
-                vk::DescriptorImageInfo::builder()
-                    .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                    .image_view(gpu_render_object.texture_image_view)
-                    .sampler(data.texture_sampler)
-                    .build()
-            })
-            .collect::<Vec<_>>();
-
-        // let image_info = &[info];
-        let sampler_write = vk::WriteDescriptorSet::builder()
-            .dst_set(data.descriptor_sets[i])
-            .dst_binding(1)
-            .dst_array_element(0)
-            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-            .image_info(&image_infos);
-
-        device.update_descriptor_sets(&[ubo_write, sampler_write], &[] as &[vk::CopyDescriptorSet]);
-    }
+    data.ubo_index = -1;
+    data.sampler_index = -1;
 
     Ok(())
 }

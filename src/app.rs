@@ -81,6 +81,11 @@ impl App {
         create_depth_objects(&instance, &device, &mut data)?;
         // create_framebuffers(&device, &mut data)?;
 
+        create_texture_sampler(&device, &mut data)?;
+
+        create_descriptor_pool(&device, &mut data)?;
+        create_descriptor_sets(&device, &mut data)?;
+
         let translation1 = Vector3 { x: 1.0, y: 0.0, z: 0.0 };
         let rotation1 = Euler {
             x: Rad(0.0),
@@ -89,7 +94,7 @@ impl App {
         };
         let scale1 = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
         let cpu_render_object1 = CpuRenderObject::new("assets/cube.obj", "assets/cube.png", translation1, rotation1, scale1)?;
-        let gpu_render_object1 = GpuRenderObject::new(&instance, &device, &data, &cpu_render_object1)?;
+        let gpu_render_object1 = GpuRenderObject::new(&instance, &device, &mut data, &cpu_render_object1)?;
 
         let translation2 = Vector3 { x: -2.0, y: 0.0, z: 1.0 };
         let rotation2 = Euler {
@@ -99,19 +104,12 @@ impl App {
         };
         let scale2 = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
         let cpu_render_object2 = CpuRenderObject::new("assets/teapot.obj", "assets/viking_room.png", translation2, rotation2, scale2)?;
-        let gpu_render_object2 = GpuRenderObject::new(&instance, &device, &data, &cpu_render_object2)?;
+        let gpu_render_object2 = GpuRenderObject::new(&instance, &device, &mut data, &cpu_render_object2)?;
 
         let gpu_render_objects = vec![gpu_render_object1, gpu_render_object2];
 
-        // create_texture_image(&instance, &device, &mut data, &render_object)?;
-        // create_texture_image_view(&device, &mut data)?;
-        create_texture_sampler(&device, &mut data)?;
-
-        // create_vertex_buffer(&instance, &device, &mut data)?;
-        // create_index_buffer(&instance, &device, &mut data)?;
         create_uniform_buffers(&instance, &device, &mut data)?;
-        create_descriptor_pool(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data, &gpu_render_objects)?;
+
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
         Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects })
@@ -210,13 +208,9 @@ impl App {
         self.data.uniform_buffers_memory
             .iter()
             .for_each(|m| self.device.free_memory(*m, None));
-        // self.data.framebuffers
-        //     .iter()
-        //     .for_each(|f| self.device.destroy_framebuffer(*f, None));
         self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
         self.device.destroy_pipeline(self.data.pipeline, None);
         self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
-        // self.device.destroy_render_pass(self.data.render_pass, None);
         self.data.swapchain_image_views
             .iter()
             .for_each(|v| self.device.destroy_image_view(*v, None));
@@ -224,14 +218,7 @@ impl App {
         // end of old destroy swapchain
 
         self.device.destroy_sampler(self.data.texture_sampler, None);
-        // self.device.destroy_image_view(self.data.texture_image_view, None);
-        // self.device.destroy_image(self.data.texture_image, None);
-        // self.device.free_memory(self.data.texture_image_memory, None);
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
-        // self.device.destroy_buffer(self.data.index_buffer, None);
-        // self.device.free_memory(self.data.index_buffer_memory, None);
-        // self.device.destroy_buffer(self.data.vertex_buffer, None);
-        // self.device.free_memory(self.data.vertex_buffer_memory, None);
 
         self.gpu_render_objects
             .iter()
@@ -260,45 +247,19 @@ impl App {
     pub unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.device.device_wait_idle()?;
 
-        self.destroy_swapchain();
-
-        // self.data.swapchain_image_views
-        //     .iter()
-        //     .for_each(|v| self.device.destroy_image_view(*v, None));
-        // self.device.destroy_swapchain_khr(self.data.swapchain, None);
-
-        create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
-        create_swapchain_image_views(&self.device, &mut self.data)?;
-        create_pipeline(&self.instance, &self.device, &mut self.data)?;
-        create_depth_objects(&self.instance, &self.device, &mut self.data)?;
-        create_uniform_buffers(&self.instance, &self.device, &mut self.data)?;
-        create_descriptor_pool(&self.device, &mut self.data)?;
-        create_descriptor_sets(&self.device, &mut self.data, &self.gpu_render_objects)?;
-        create_command_buffers(&self.device, &mut self.data)?;
-        self.data
-            .images_in_flight
-            .resize(self.data.swapchain_images.len(), vk::Fence::null());
-        Ok(())
-    }
-
-    unsafe fn destroy_swapchain(&mut self) {
-        self.device.destroy_image_view(self.data.depth_image_view, None);
-        self.device.free_memory(self.data.depth_image_memory, None);
-        self.device.destroy_image(self.data.depth_image, None);
-        self.device.destroy_descriptor_pool(self.data.descriptor_pool, None);
-        self.data.uniform_buffers
-            .iter()
-            .for_each(|b| self.device.destroy_buffer(*b, None));
-        self.data.uniform_buffers_memory
-            .iter()
-            .for_each(|m| self.device.free_memory(*m, None));
-        self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
-        self.device.destroy_pipeline(self.data.pipeline, None);
-        self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
         self.data.swapchain_image_views
             .iter()
             .for_each(|v| self.device.destroy_image_view(*v, None));
+        self.device.destroy_image_view(self.data.depth_image_view, None);
+        self.device.free_memory(self.data.depth_image_memory, None);
+        self.device.destroy_image(self.data.depth_image, None);
         self.device.destroy_swapchain_khr(self.data.swapchain, None);
+
+        create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
+        create_swapchain_image_views(&self.device, &mut self.data)?;
+        create_depth_objects(&self.instance, &self.device, &mut self.data)?;
+
+        Ok(())
     }
 
     pub fn trs_matrix(
@@ -412,19 +373,19 @@ impl App {
         self.device.cmd_set_viewport(command_buffer, 0, &[viewport]);
         self.device.cmd_set_scissor(command_buffer, 0, &[scissor]);
 
-        for (object_index, gpu_render_object) in self.gpu_render_objects.iter().enumerate() {
+        self.device.cmd_bind_descriptor_sets(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            self.data.pipeline_layout,
+            0,
+            &[self.data.descriptor_set],
+            &[],
+        );
+
+        for gpu_render_object in &self.gpu_render_objects {
             // TODO: have only 1 buffer for both and use offset instead, nvidia dev guide says it's very bad now
             self.device.cmd_bind_vertex_buffers(command_buffer, 0, &[gpu_render_object.vertex_buffer], &[0]);
             self.device.cmd_bind_index_buffer(command_buffer, gpu_render_object.index_buffer, 0, vk::IndexType::UINT32);
-
-            self.device.cmd_bind_descriptor_sets(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.data.pipeline_layout,
-                0,
-                &[self.data.descriptor_sets[image_index]],
-                &[],
-            );
 
             let mut new_rotation = gpu_render_object.rotation.clone();
             new_rotation.y *= time;
@@ -443,7 +404,7 @@ impl App {
                 model_bytes,
             );
 
-            let obj_index_bytes = std::slice::from_raw_parts(&(object_index as u32) as *const u32 as *const u8, 4);
+            let obj_index_bytes = std::slice::from_raw_parts(&(gpu_render_object.sampler_index) as *const u32 as *const u8, 4);
             self.device.cmd_push_constants(
                 command_buffer,
                 self.data.pipeline_layout,
@@ -518,7 +479,7 @@ impl App {
         let ubo = UniformBufferObject { view, proj };
 
         let memory = self.device.map_memory(
-            self.data.uniform_buffers_memory[image_index],
+            self.data.uniform_buffers_memory[self.frame],
             0,
             size_of::<UniformBufferObject>() as u64,
             vk::MemoryMapFlags::empty(),
@@ -526,7 +487,7 @@ impl App {
         
         memcpy(&ubo, memory.cast(), 1);
 
-        self.device.unmap_memory(self.data.uniform_buffers_memory[image_index]);
+        self.device.unmap_memory(self.data.uniform_buffers_memory[self.frame]);
 
         Ok(())
     }
@@ -563,7 +524,9 @@ pub struct AppData {
     pub uniform_buffers: Vec<vk::Buffer>,
     pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
     pub descriptor_pool: vk::DescriptorPool,
-    pub descriptor_sets: Vec<vk::DescriptorSet>,
+    pub descriptor_set: vk::DescriptorSet,
+    pub ubo_index: i32,
+    pub sampler_index: i32,
     // pub texture_image: vk::Image,
     // pub texture_image_memory: vk::DeviceMemory,
     // pub texture_image_view: vk::ImageView,
