@@ -30,7 +30,7 @@ use std::ptr::copy_nonoverlapping as memcpy;
 
 use crate::app::AppData;
 use crate::image::create_image_view;
-use crate::vulkan::QueueFamilyIndices;
+use crate::validations::QueueFamilyIndices;
 
 #[derive(Clone, Debug)]
 pub struct SwapchainSupport {

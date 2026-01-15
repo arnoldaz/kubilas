@@ -13,6 +13,7 @@ mod swapchain;
 mod image;
 mod cpu_render_object;
 mod gpu_render_object;
+mod validations;
 
 
 use app::App;

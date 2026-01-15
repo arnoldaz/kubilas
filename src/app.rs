@@ -38,8 +38,9 @@ use crate::cpu_render_object::CpuRenderObject;
 use crate::gpu_render_object::{self, GpuRenderObject};
 use crate::image::{create_texture_sampler};
 use crate::swapchain::{create_swapchain, create_swapchain_image_views};
+use crate::validations::{VALIDATION_ENABLED, create_instance, create_logical_device, pick_physical_device};
 use crate::vertex::Vertex;
-use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, VALIDATION_ENABLED, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_instance, create_logical_device, create_pipeline, create_sync_objects, create_uniform_buffers, pick_physical_device};
+use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_pipeline, create_sync_objects, create_uniform_buffers};
 
 use std::ptr::copy_nonoverlapping as memcpy;
 
