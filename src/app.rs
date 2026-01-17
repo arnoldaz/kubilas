@@ -1,8 +1,3 @@
-#![allow(
-    dead_code,
-    unused_variables,
-)]
-
 use anyhow::{anyhow, Result};
 use winit::window::Window;
 
@@ -14,10 +9,10 @@ use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, KhrSurf
 
 use std::f32::consts::FRAC_PI_2;
 use std::mem::size_of;
-use cgmath::{Deg, EuclideanSpace, Euler, InnerSpace, Matrix4, Point3, Quaternion, Rad, Vector3, point3, vec3};
+use cgmath::{Euler, Matrix4, Quaternion, Rad, Vector3, point3};
 use std::time::Instant;
 
-use crate::camera::{self, Camera, CameraController, Projection};
+use crate::camera::{Camera, CameraMovement, Projection};
 use crate::cpu_render_object::CpuRenderObject;
 use crate::gpu_render_object::GpuRenderObject;
 use crate::image::{create_texture_sampler};
@@ -27,11 +22,6 @@ use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_command_bu
 
 use std::ptr::copy_nonoverlapping as memcpy;
 
-
-
-
-/// Our Vulkan app.
-// #[derive(Clone, Debug)]
 pub struct App {
     pub entry: Entry,
     pub instance: Instance,
@@ -41,13 +31,13 @@ pub struct App {
     pub resized: bool,
     pub start: Instant,
     pub gpu_render_objects: Vec<GpuRenderObject>,
+
     pub camera: Camera,
     pub projection: Projection,
-    pub camera_controller: CameraController,
+    pub camera_movement: CameraMovement,
 }
 
 impl App {
-    /// Creates our Vulkan app.
     pub unsafe fn create(window: &Window) -> Result<Self> {
         let loader = LibloadingLoader::new(LIBRARY)?;
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
@@ -106,34 +96,15 @@ impl App {
             10000.0,
         );
 
-        let camera_controller = CameraController::new(5.0, 5.0);
+        let camera_movement = CameraMovement::new(5.0, 5.0);
 
         create_uniform_buffers(&instance, &device, &mut data)?;
-
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
-        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects, camera, projection, camera_controller })
+
+        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects, camera, projection, camera_movement })
     }
 
-    // pub fn update_camera(&mut self, x_diff: f32, y_diff: f32, dt: f32) {
-    //     self.camera.yaw += Rad(x_diff) * self.camera.sensitivity * dt;
-    //     self.camera.pitch += Rad(y_diff) * self.camera.sensitivity * dt;
-    // }
-
-    // pub fn move_camera(&mut self, amount_forward: f32, amount_right: f32, speed: f32, dt: f32) {
-
-    //     // Move forward/backward and left/right
-    //     let (yaw_sin, yaw_cos) = self.camera.yaw.0.sin_cos();
-    //     let forward = Vector3::new(yaw_cos, 0.0, yaw_sin).normalize();
-    //     let right = Vector3::new(-yaw_sin, 0.0, yaw_cos).normalize();
-    //     self.camera.position += forward * amount_forward * speed * dt;
-    //     self.camera.position += right * amount_right * speed * dt;
-
-    //     // self.camera.position.x += forward;
-    //     // self.camera.position.y += right;
-    // }
-
-    /// Renders a frame for our Vulkan app.
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
         self.device.wait_for_fences(
             &[self.data.in_flight_fences[self.frame]],
@@ -169,11 +140,9 @@ impl App {
         self.update_command_buffer(image_index)?;
         self.update_uniform_buffer(image_index)?;
 
-        // let wait_semaphores = &[self.data.image_available_semaphore];
         let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
         let command_buffers = &[self.data.command_buffers[image_index as usize]];
-        // let signal_semaphores = &[self.data.render_finished_semaphore];
         let signal_semaphores = &[self.data.render_finished_semaphores[image_index as usize]];
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
@@ -185,9 +154,6 @@ impl App {
         self.device.reset_fences(&[self.data.in_flight_fences[self.frame]])?;
 
         self.device.queue_submit(self.data.graphics_queue, &[submit_info], self.data.in_flight_fences[self.frame])?;
-    
-        // self.device.queue_submit(
-        //     self.data.graphics_queue, &[submit_info], vk::Fence::null())?;
 
         let swapchains = &[self.data.swapchain];
         let image_indices = &[image_index as u32];
@@ -195,8 +161,6 @@ impl App {
             .wait_semaphores(signal_semaphores)
             .swapchains(swapchains)
             .image_indices(image_indices);
-
-        // self.device.queue_present_khr(self.data.present_queue, &present_info)?;
 
         let result = self.device.queue_present_khr(self.data.present_queue, &present_info);
         let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR) || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
@@ -207,13 +171,10 @@ impl App {
             return Err(anyhow!(e));
         }
 
-        // self.device.queue_wait_idle(self.data.present_queue)?;
-
         self.frame = (self.frame + 1) % MAX_FRAMES_IN_FLIGHT;
         Ok(())
     }
 
-    /// Destroys our Vulkan app.
     pub unsafe fn destroy(&mut self) {
         // old destroy swapchain
         self.device.destroy_image_view(self.data.depth_image_view, None);
@@ -464,32 +425,8 @@ impl App {
     }
 
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
-        let time = self.start.elapsed().as_secs_f32() / 2.0;
-
-        // let view = Matrix4::look_at_rh(
-        //     point3(5.0, 5.0, 5.0),
-        //     point3(0.0, 0.0, 0.0),
-        //     vec3(0.0, 0.0, 1.0),
-        // );
-
         let view = self.camera.get_view_matrix();
-
-        let correction = Matrix4::new(
-            1.0,  0.0,  0.0,  0.0,
-            0.0, -1.0,  0.0,  0.0,
-            0.0,  0.0,  0.5,  0.0,
-            0.0,  0.0,  0.5,  1.0,
-        );
-
-        let proj = correction * cgmath::perspective(
-            Deg(90.0),
-            self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
-            0.1,
-            10000.0,
-        );
-
-        // proj[1][1] *= -1.0;
-
+        let proj = self.projection.get_perspective_projection_matrix();
         let ubo = UniformBufferObject { view, proj };
 
         let memory = self.device.map_memory(
@@ -507,7 +444,6 @@ impl App {
     }
 }
 
-/// The Vulkan handles and associated properties used by our Vulkan app.
 #[derive(Clone, Debug, Default)]
 pub struct AppData {
     pub surface: vk::SurfaceKHR,

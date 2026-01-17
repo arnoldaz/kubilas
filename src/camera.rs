@@ -1,5 +1,4 @@
-use std::{f32::consts::FRAC_PI_2, time::Duration};
-
+use std::{time::Duration};
 use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3, perspective};
 
 pub const PROJECTION_CORRECTION_MATRIX: Matrix4<f32> = Matrix4::new(
@@ -13,8 +12,6 @@ pub struct Camera {
     pub position: Point3<f32>,
     pub pitch: Rad<f32>,
     pub yaw: Rad<f32>,
-    // pub sensitivity: f32,
-    // pub movement_speed: f32,
 }
 
 pub struct Projection {
@@ -24,25 +21,17 @@ pub struct Projection {
     z_far: f32,
 }
 
-pub enum CameraMove {
-    Up,
-    Down,
-    Left,
-    Right
-}
-
-pub struct CameraController {
-    pub amount_left: f32,
-    pub amount_right: f32,
+pub struct CameraMovement {
     pub amount_forward: f32,
     pub amount_backward: f32,
+    pub amount_left: f32,
+    pub amount_right: f32,
     pub amount_up: f32,
     pub amount_down: f32,
     pub rotate_horizontal: f32,
     pub rotate_vertical: f32,
-    pub scroll: f32,
-    pub speed: f32,
-    pub sensitivity: f32,
+    speed: f32,
+    sensitivity: f32,
 }
 
 
@@ -66,22 +55,35 @@ impl Camera {
         )
     }
 
-    // pub fn rotate(&mut self, mouse_x_diff: f32, mouse_y_diff: f32, delta_time: f32) {
-    //     self.yaw += Rad(mouse_x_diff) * self.sensitivity * delta_time;
-    //     self.pitch += Rad(mouse_y_diff) * self.sensitivity * delta_time;
-    // }
+    pub fn update(&mut self, movement: &CameraMovement, delta_time: Duration) {
+        let delta_time = delta_time.as_secs_f32();
 
-    // pub fn move_horizontal(&mut self, movement: CameraMove, delta_time: f32) {
-    //     let (yaw_sin, yaw_cos) = self.yaw.0.sin_cos();
-    //     let forward = Vector3::new(yaw_cos, 0.0, yaw_sin).normalize();
-    //     let right = Vector3::new(-yaw_sin, 0.0, yaw_cos).normalize();
-    //     self.position += forward * (self.amount_forward - self.amount_backward) * self.movement_speed * delta_time;
-    //     self.position += right * (self.amount_right - self.amount_left) * self.movement_speed * delta_time;
-    // }
+        let (yaw_sin, yaw_cos) = self.yaw.0.sin_cos();
+        let (pitch_sin, pitch_cos) = self.pitch.0.sin_cos();
 
-    // pub fn move_vertical(&mut self, amount_up: f32, delta_time: f32) {
-    //     self.position.y += amount_up * self.movement_speed * delta_time;
-    // }
+        // FPS style (always move forward ignoring mouse vertical position)
+        // let forward = Vector3::new(yaw_cos, 0.0, yaw_sin).normalize();
+
+        let forward = Vector3::new(
+            pitch_cos * yaw_cos,
+            pitch_sin,
+            pitch_cos * yaw_sin,
+        ).normalize();
+        let right = Vector3::new(-yaw_sin, 0.0, yaw_cos).normalize();
+
+        // Forwards/backwards
+        self.position += forward * (movement.amount_forward - movement.amount_backward) * movement.speed * delta_time;
+        
+        // Left/right
+        self.position += right * -(movement.amount_right - movement.amount_left) * movement.speed * delta_time;
+
+        // Up/down
+        self.position.y += (movement.amount_up - movement.amount_down) * movement.speed * delta_time;
+
+        // Rotate
+        self.yaw += Rad(movement.rotate_horizontal) * movement.sensitivity * delta_time;
+        self.pitch += Rad(movement.rotate_vertical) * movement.sensitivity * delta_time;
+    }
 }
 
 impl Projection {
@@ -103,9 +105,7 @@ impl Projection {
     }
 }
 
-const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
-
-impl CameraController {
+impl CameraMovement {
     pub fn new(speed: f32, sensitivity: f32) -> Self {
         Self {
             amount_left: 0.0,
@@ -116,36 +116,8 @@ impl CameraController {
             amount_down: 0.0,
             rotate_horizontal: 0.0,
             rotate_vertical: 0.0,
-            scroll: 0.0,
             speed,
             sensitivity,
         }
-    }
-
-    pub fn update_camera(&mut self, camera: &mut Camera, dt: Duration) {
-        let dt = dt.as_secs_f32();
-
-        let (yaw_sin, yaw_cos) = camera.yaw.0.sin_cos();
-        let (pitch_sin, pitch_cos) = camera.pitch.0.sin_cos();
-        // let forward = Vector3::new(yaw_cos, 0.0, yaw_sin).normalize();
-        let forward = Vector3::new(
-            pitch_cos * yaw_cos,
-            pitch_sin,
-            pitch_cos * yaw_sin,
-        ).normalize();
-        let right = Vector3::new(-yaw_sin, 0.0, yaw_cos).normalize();
-        camera.position += forward * (self.amount_forward - self.amount_backward) * self.speed * dt;
-        camera.position += right * -(self.amount_right - self.amount_left) * self.speed * dt;
-
-
-        camera.position.y += (self.amount_up - self.amount_down) * self.speed * dt;
-
-        camera.yaw += Rad(self.rotate_horizontal) * self.sensitivity * dt;
-        camera.pitch += Rad(self.rotate_vertical) * self.sensitivity * dt;
-
-        self.rotate_horizontal = 0.0;
-        self.rotate_vertical = 0.0;
-
-
     }
 }

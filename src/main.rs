@@ -23,9 +23,9 @@ use anyhow::{Result};
 use vulkanalia::vk::DeviceV1_0;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent};
+use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowAttributes, WindowId};
 
 type Vec2 = cgmath::Vector2<f32>;
@@ -55,18 +55,21 @@ impl WindowHandler {
             Event::AboutToWait => {
                 window.request_redraw();
             },
-            Event::WindowEvent {
-                event: window_event,
-                ..
-            } => match window_event {
+            Event::WindowEvent { event: window_event, .. } => match window_event {
                 WindowEvent::RedrawRequested if !event_loop.exiting() && !self.minimized => {
-                    unsafe { app.render(window) }.expect("Rendering failed");
-
+                    // Update camera
                     let delta_time = self.last_frame_time.elapsed();
                     self.last_frame_time = Instant::now();
+                    app.camera.update(&app.camera_movement, delta_time);
 
-                    app.camera_controller.update_camera(&mut app.camera, delta_time);
+                    // Render app
+                    unsafe { app.render(window) }.expect("Rendering failed");
 
+                    // Reset mouse movement to not continuously move every frame
+                    app.camera_movement.rotate_horizontal = 0.0;
+                    app.camera_movement.rotate_vertical = 0.0;
+
+                    // Update FPS counter
                     let fps_time = self.last_fps_time.elapsed();
                     self.frames += 1;
 
@@ -84,10 +87,7 @@ impl WindowHandler {
                         app.destroy();
                     }
                 },
-                WindowEvent::KeyboardInput { 
-                    event: KeyEvent { physical_key, state, .. },
-                    ..
-                } => match physical_key {
+                WindowEvent::KeyboardInput { event: KeyEvent { physical_key, state, .. }, .. } => match physical_key {
                     PhysicalKey::Code(KeyCode::Escape) => {
                         event_loop.exit();
                         unsafe {
@@ -114,49 +114,41 @@ impl WindowHandler {
                     PhysicalKey::Code(KeyCode::KeyW) => {
                         if self.camera_mode {
                             let amount = if state.is_pressed() { 1.0 } else { 0.0 };
-                            app.camera_controller.amount_forward = amount;
+                            app.camera_movement.amount_forward = amount;
                         }
                     },
                     PhysicalKey::Code(KeyCode::KeyA) => {
                         if self.camera_mode {
                             let amount = if state.is_pressed() { 1.0 } else { 0.0 };
-                            app.camera_controller.amount_left = amount;
+                            app.camera_movement.amount_left = amount;
                         }
                     },
                     PhysicalKey::Code(KeyCode::KeyS) => {
                         if self.camera_mode {
                             let amount = if state.is_pressed() { 1.0 } else { 0.0 };
-                            app.camera_controller.amount_backward = amount;
+                            app.camera_movement.amount_backward = amount;
                         }
                     },
                     PhysicalKey::Code(KeyCode::KeyD) => {
                         if self.camera_mode {
                             let amount = if state.is_pressed() { 1.0 } else { 0.0 };
-                            app.camera_controller.amount_right = amount;
+                            app.camera_movement.amount_right = amount;
                         }
                     },
                     PhysicalKey::Code(KeyCode::Space) => {
                         if self.camera_mode {
                             let amount = if state.is_pressed() { 1.0 } else { 0.0 };
-                            app.camera_controller.amount_up = amount;
+                            app.camera_movement.amount_up = amount;
                         }
                     },
                     PhysicalKey::Code(KeyCode::ShiftLeft) => {
                         if self.camera_mode {
                             let amount = if state.is_pressed() { 1.0 } else { 0.0 };
-                            app.camera_controller.amount_down = amount;
+                            app.camera_movement.amount_down = amount;
                         }
                     },
                     _ => {},
-                }
-
-                // WindowEvent::KeyboardInput {
-                //     event: KeyEvent { physical_key, state: ElementState::Released, .. },
-                //     ..
-                // } => match physical_key {
-                //     _ => {},
-                // }
-
+                },
                 WindowEvent::Resized(size) => {
                     if size.width == 0 || size.height == 0 {
                         self.minimized = true;
@@ -165,25 +157,18 @@ impl WindowHandler {
                         app.resized = true;
                         unsafe { app.render(window) }.unwrap();
                     }
-                }
-
+                },
                 WindowEvent::Moved(_) if !event_loop.exiting() && !self.minimized => {
                     unsafe { app.render(window) }.unwrap();
-                }
-
+                },
                 _ => {}
             },
-
-            Event::DeviceEvent {
-                event: DeviceEvent::MouseMotion { delta: (dx, dy) },
-                ..
-            } => {
+            Event::DeviceEvent { event: DeviceEvent::MouseMotion { delta: (dx, dy) }, .. } => {
                 if self.camera_mode {
-                    app.camera_controller.rotate_horizontal = dx as f32;
-                    app.camera_controller.rotate_vertical = dy as f32;
+                    app.camera_movement.rotate_horizontal = dx as f32;
+                    app.camera_movement.rotate_vertical = dy as f32;
                 }
-            }
-
+            },
             _ => {}
         }
     }
