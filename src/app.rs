@@ -12,11 +12,12 @@ use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
 
+use std::f32::consts::FRAC_PI_2;
 use std::mem::size_of;
-use cgmath::{Deg, EuclideanSpace, Euler, Matrix4, Point3, Quaternion, Rad, Vector3, point3, vec3};
+use cgmath::{Deg, EuclideanSpace, Euler, InnerSpace, Matrix4, Point3, Quaternion, Rad, Vector3, point3, vec3};
 use std::time::Instant;
 
-use crate::camera::Camera;
+use crate::camera::{self, Camera, CameraController, Projection};
 use crate::cpu_render_object::CpuRenderObject;
 use crate::gpu_render_object::GpuRenderObject;
 use crate::image::{create_texture_sampler};
@@ -41,6 +42,8 @@ pub struct App {
     pub start: Instant,
     pub gpu_render_objects: Vec<GpuRenderObject>,
     pub camera: Camera,
+    pub projection: Projection,
+    pub camera_controller: CameraController,
 }
 
 impl App {
@@ -89,19 +92,46 @@ impl App {
 
         let gpu_render_objects = vec![gpu_render_object1, gpu_render_object2];
 
-        let camera = Camera { position: Point3::new(5.0, 5.0, 5.0), pitch: Rad(std::f32::consts::PI), yaw: Rad(std::f32::consts::FRAC_PI_4), sensitivity: 0.005 };
+        let camera = Camera::new(
+            point3(5.0, 5.0, 5.0),
+            Rad(std::f32::consts::PI),
+            Rad(std::f32::consts::FRAC_PI_4),
+        );
+
+        let projection = Projection::new(
+            data.swapchain_extent.width,
+            data.swapchain_extent.height,
+            Rad(FRAC_PI_2),
+            0.1,
+            10000.0,
+        );
+
+        let camera_controller = CameraController::new(5.0, 5.0);
 
         create_uniform_buffers(&instance, &device, &mut data)?;
 
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
-        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects, camera })
+        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects, camera, projection, camera_controller })
     }
 
-    pub fn update_camera(&mut self, x_diff: f32, y_diff: f32, dt: f32) {
-        self.camera.yaw += Rad(x_diff) * self.camera.sensitivity * dt;
-        self.camera.pitch += Rad(y_diff) * self.camera.sensitivity * dt;
-    }
+    // pub fn update_camera(&mut self, x_diff: f32, y_diff: f32, dt: f32) {
+    //     self.camera.yaw += Rad(x_diff) * self.camera.sensitivity * dt;
+    //     self.camera.pitch += Rad(y_diff) * self.camera.sensitivity * dt;
+    // }
+
+    // pub fn move_camera(&mut self, amount_forward: f32, amount_right: f32, speed: f32, dt: f32) {
+
+    //     // Move forward/backward and left/right
+    //     let (yaw_sin, yaw_cos) = self.camera.yaw.0.sin_cos();
+    //     let forward = Vector3::new(yaw_cos, 0.0, yaw_sin).normalize();
+    //     let right = Vector3::new(-yaw_sin, 0.0, yaw_cos).normalize();
+    //     self.camera.position += forward * amount_forward * speed * dt;
+    //     self.camera.position += right * amount_right * speed * dt;
+
+    //     // self.camera.position.x += forward;
+    //     // self.camera.position.y += right;
+    // }
 
     /// Renders a frame for our Vulkan app.
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
@@ -246,6 +276,8 @@ impl App {
         create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
         create_swapchain_image_views(&self.device, &mut self.data)?;
         create_depth_objects(&self.instance, &self.device, &mut self.data)?;
+
+        self.projection.resize(self.data.swapchain_extent.width, self.data.swapchain_extent.height);
 
         Ok(())
     }
@@ -440,7 +472,7 @@ impl App {
         //     vec3(0.0, 0.0, 1.0),
         // );
 
-        let view = self.camera.calc_matrix();
+        let view = self.camera.get_view_matrix();
 
         let correction = Matrix4::new(
             1.0,  0.0,  0.0,  0.0,

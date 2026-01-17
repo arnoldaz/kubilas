@@ -39,8 +39,9 @@ struct WindowHandler {
     app: Option<App>,
     minimized: bool,
     last_frame_time: Instant,
+    last_fps_time: Instant,
     frames: u32,
-    canmera_mode: bool,
+    camera_mode: bool,
 }
 
 impl WindowHandler {
@@ -53,34 +54,38 @@ impl WindowHandler {
         match event {
             Event::AboutToWait => {
                 window.request_redraw();
-            }
-
-            Event::WindowEvent { event: window_event, .. } => match window_event {
+            },
+            Event::WindowEvent {
+                event: window_event,
+                ..
+            } => match window_event {
                 WindowEvent::RedrawRequested if !event_loop.exiting() && !self.minimized => {
                     unsafe { app.render(window) }.expect("Rendering failed");
 
-                    let now = Instant::now();
-                    let elapsed = now.duration_since(self.last_frame_time);
+                    let delta_time = self.last_frame_time.elapsed();
+                    self.last_frame_time = Instant::now();
+
+                    app.camera_controller.update_camera(&mut app.camera, delta_time);
+
+                    let fps_time = self.last_fps_time.elapsed();
                     self.frames += 1;
 
-                    if elapsed.as_secs_f32() > 0.25 {
-                        let fps = self.frames as f64 / elapsed.as_secs_f64();
+                    if fps_time.as_secs_f32() > 0.25 {
+                        let fps = self.frames as f64 / fps_time.as_secs_f64();
                         window.set_title(&format!("Kubilas - {:.1} FPS", fps));
-                        self.last_frame_time = now;
+                        self.last_fps_time = Instant::now();
                         self.frames = 0;
                     }
-                }
-
+                },
                 WindowEvent::CloseRequested => {
                     event_loop.exit();
                     unsafe {
                         app.device.device_wait_idle().unwrap();
                         app.destroy();
                     }
-                }
-
-                WindowEvent::KeyboardInput {
-                    event: KeyEvent { physical_key, state: ElementState::Pressed, .. },
+                },
+                WindowEvent::KeyboardInput { 
+                    event: KeyEvent { physical_key, state, .. },
                     ..
                 } => match physical_key {
                     PhysicalKey::Code(KeyCode::Escape) => {
@@ -91,21 +96,66 @@ impl WindowHandler {
                         }
                     },
                     PhysicalKey::Code(KeyCode::Enter) => {
-                        self.canmera_mode = !self.canmera_mode;
-
-                        if self.canmera_mode {
-                            window.set_cursor_visible(false);
-                            window
-                                .set_cursor_grab(CursorGrabMode::Locked)
-                                .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined))
-                                .unwrap();
-                        } else {
-                            window.set_cursor_visible(true);
-                            window.set_cursor_grab(CursorGrabMode::None).unwrap();
+                        if state.is_pressed() {
+                            self.camera_mode = !self.camera_mode;
+                            
+                            if self.camera_mode {
+                                window.set_cursor_visible(false);
+                                window
+                                    .set_cursor_grab(CursorGrabMode::Locked)
+                                    .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined))
+                                    .unwrap();
+                            } else {
+                                window.set_cursor_visible(true);
+                                window.set_cursor_grab(CursorGrabMode::None).unwrap();
+                            }
+                        }
+                    },
+                    PhysicalKey::Code(KeyCode::KeyW) => {
+                        if self.camera_mode {
+                            let amount = if state.is_pressed() { 1.0 } else { 0.0 };
+                            app.camera_controller.amount_forward = amount;
+                        }
+                    },
+                    PhysicalKey::Code(KeyCode::KeyA) => {
+                        if self.camera_mode {
+                            let amount = if state.is_pressed() { 1.0 } else { 0.0 };
+                            app.camera_controller.amount_left = amount;
+                        }
+                    },
+                    PhysicalKey::Code(KeyCode::KeyS) => {
+                        if self.camera_mode {
+                            let amount = if state.is_pressed() { 1.0 } else { 0.0 };
+                            app.camera_controller.amount_backward = amount;
+                        }
+                    },
+                    PhysicalKey::Code(KeyCode::KeyD) => {
+                        if self.camera_mode {
+                            let amount = if state.is_pressed() { 1.0 } else { 0.0 };
+                            app.camera_controller.amount_right = amount;
+                        }
+                    },
+                    PhysicalKey::Code(KeyCode::Space) => {
+                        if self.camera_mode {
+                            let amount = if state.is_pressed() { 1.0 } else { 0.0 };
+                            app.camera_controller.amount_up = amount;
+                        }
+                    },
+                    PhysicalKey::Code(KeyCode::ShiftLeft) => {
+                        if self.camera_mode {
+                            let amount = if state.is_pressed() { 1.0 } else { 0.0 };
+                            app.camera_controller.amount_down = amount;
                         }
                     },
                     _ => {},
                 }
+
+                // WindowEvent::KeyboardInput {
+                //     event: KeyEvent { physical_key, state: ElementState::Released, .. },
+                //     ..
+                // } => match physical_key {
+                //     _ => {},
+                // }
 
                 WindowEvent::Resized(size) => {
                     if size.width == 0 || size.height == 0 {
@@ -125,13 +175,13 @@ impl WindowHandler {
             },
 
             Event::DeviceEvent {
-                event: DeviceEvent::MouseMotion { delta },
+                event: DeviceEvent::MouseMotion { delta: (dx, dy) },
                 ..
             } => {
-                if self.canmera_mode {
-                    app.update_camera(delta.0 as f32, delta.1 as f32, 1.0);
+                if self.camera_mode {
+                    app.camera_controller.rotate_horizontal = dx as f32;
+                    app.camera_controller.rotate_vertical = dy as f32;
                 }
-                // println!("{} {} delta", delta.0, delta.1);
             }
 
             _ => {}
@@ -145,7 +195,7 @@ impl ApplicationHandler for WindowHandler {
             .create_window(
                 WindowAttributes::default()
                     .with_title("Kubilas")
-                    .with_inner_size(LogicalSize::new(1024, 768))
+                    .with_inner_size(LogicalSize::new(1600, 900))
             )
             .expect("Failed to create window");
 
@@ -174,7 +224,7 @@ fn main() -> Result<()> {
     pretty_env_logger::init();
 
     let event_loop = EventLoop::new()?;
-    let mut window_handler = WindowHandler { window: None, app: None, minimized: false, last_frame_time: Instant::now(), frames: 0, canmera_mode: false };
+    let mut window_handler = WindowHandler { window: None, app: None, minimized: false, last_frame_time: Instant::now(), frames: 0, camera_mode: false, last_fps_time: Instant::now() };
     event_loop.run_app(&mut window_handler)?;
 
     Ok(())
