@@ -1,34 +1,17 @@
 
-use thiserror::Error;
-use anyhow::{anyhow, Result};
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
-use winit::event_loop::EventLoop;
-use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowBuilder};
+use anyhow::Result;
 
-use std::collections::HashSet;
-use std::ffi::CStr;
 use std::fs::File;
 use std::io::BufReader;
-use std::os::raw::c_void;
 
-use log::*;
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::window as vk_window;
-use vulkanalia::prelude::v1_0::*;
-use vulkanalia::bytecode::Bytecode;
 
-use std::mem::size_of;
-use cgmath::{Euler, Quaternion, Rad, Vector3, vec2, vec3};
+use cgmath::{Euler, Rad, Vector3, vec2, vec3};
 
-use crate::app::AppData;
 use crate::vertex::Vertex;
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 
 
 // cpu render object

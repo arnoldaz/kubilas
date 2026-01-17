@@ -1,57 +1,36 @@
 #![allow(
     dead_code,
     unused_variables,
-    clippy::too_many_arguments,
-    clippy::unnecessary_wraps,
-    unused_imports
 )]
 
-use thiserror::Error;
 use anyhow::{anyhow, Result};
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
-use winit::event_loop::EventLoop;
-use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowBuilder};
+use winit::window::Window;
 
-use std::any::Any;
-use std::collections::HashSet;
-use std::ffi::CStr;
-use std::os::raw::c_void;
 
-use log::*;
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, InputChainStruct, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
-use vulkanalia::bytecode::Bytecode;
+use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
 
 use std::mem::size_of;
-use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, Vector3, point3, vec2, vec3};
+use cgmath::{Deg, EuclideanSpace, Euler, Matrix4, Point3, Quaternion, Rad, Vector3, point3, vec3};
 use std::time::Instant;
 
-type Vec2 = cgmath::Vector2<f32>;
-type Vec3 = cgmath::Vector3<f32>;
-type Mat4 = cgmath::Matrix4<f32>;
-
+use crate::camera::Camera;
 use crate::cpu_render_object::CpuRenderObject;
-use crate::gpu_render_object::{self, GpuRenderObject};
+use crate::gpu_render_object::GpuRenderObject;
 use crate::image::{create_texture_sampler};
 use crate::swapchain::{create_swapchain, create_swapchain_image_views};
 use crate::validations::{VALIDATION_ENABLED, create_instance, create_logical_device, pick_physical_device};
-use crate::vertex::Vertex;
 use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_pipeline, create_sync_objects, create_uniform_buffers};
 
 use std::ptr::copy_nonoverlapping as memcpy;
 
 
-use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
-use std::io::BufReader;
 
 
 /// Our Vulkan app.
-#[derive(Clone, Debug)]
+// #[derive(Clone, Debug)]
 pub struct App {
     pub entry: Entry,
     pub instance: Instance,
@@ -61,6 +40,7 @@ pub struct App {
     pub resized: bool,
     pub start: Instant,
     pub gpu_render_objects: Vec<GpuRenderObject>,
+    pub camera: Camera,
 }
 
 impl App {
@@ -109,11 +89,18 @@ impl App {
 
         let gpu_render_objects = vec![gpu_render_object1, gpu_render_object2];
 
+        let camera = Camera { position: Point3::new(5.0, 5.0, 5.0), pitch: Rad(std::f32::consts::PI), yaw: Rad(std::f32::consts::FRAC_PI_4), sensitivity: 0.005 };
+
         create_uniform_buffers(&instance, &device, &mut data)?;
 
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
-        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects })
+        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects, camera })
+    }
+
+    pub fn update_camera(&mut self, x_diff: f32, y_diff: f32, dt: f32) {
+        self.camera.yaw += Rad(x_diff) * self.camera.sensitivity * dt;
+        self.camera.pitch += Rad(y_diff) * self.camera.sensitivity * dt;
     }
 
     /// Renders a frame for our Vulkan app.
@@ -393,8 +380,8 @@ impl App {
             let new_quaternion = Quaternion::from(new_rotation);
             let model = Self::trs_matrix(gpu_render_object.translation, new_quaternion, gpu_render_object.scale);
             let model_bytes = std::slice::from_raw_parts(
-                &model as *const Mat4 as *const u8,
-                size_of::<Mat4>()
+                &model as *const Matrix4<f32> as *const u8,
+                size_of::<Matrix4<f32>>()
             );
 
             self.device.cmd_push_constants(
@@ -447,32 +434,26 @@ impl App {
     unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
         let time = self.start.elapsed().as_secs_f32() / 2.0;
 
-        // now in push constants
-        // let model = Mat4::from_axis_angle(
+        // let view = Matrix4::look_at_rh(
+        //     point3(5.0, 5.0, 5.0),
+        //     point3(0.0, 0.0, 0.0),
         //     vec3(0.0, 0.0, 1.0),
-        //     Deg(90.0) * time
         // );
 
-        let view = Mat4::look_at_rh(
-            point3(5.0, 5.0, 5.0),
-            point3(0.0, 0.0, 0.0),
-            vec3(0.0, 0.0, 1.0),
-        );
+        let view = self.camera.calc_matrix();
 
-        let correction = Mat4::new(
-            1.0,  0.0,       0.0, 0.0,
-            // We're also flipping the Y-axis with this line's `-1.0`.
-            0.0, -1.0,       0.0, 0.0,
-            0.0,  0.0, 1.0 / 2.0, 0.0,
-            0.0,  0.0, 1.0 / 2.0, 1.0,
+        let correction = Matrix4::new(
+            1.0,  0.0,  0.0,  0.0,
+            0.0, -1.0,  0.0,  0.0,
+            0.0,  0.0,  0.5,  0.0,
+            0.0,  0.0,  0.5,  1.0,
         );
-
 
         let proj = correction * cgmath::perspective(
-            Deg(45.0),
+            Deg(90.0),
             self.data.swapchain_extent.width as f32 / self.data.swapchain_extent.height as f32,
             0.1,
-            50.0,
+            10000.0,
         );
 
         // proj[1][1] *= -1.0;

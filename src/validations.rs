@@ -1,38 +1,25 @@
 use thiserror::Error;
 use anyhow::{anyhow, Result};
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
-use winit::event_loop::EventLoop;
-use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowBuilder};
+use winit::window::Window;
 
 use std::collections::HashSet;
 use std::ffi::CStr;
 use std::os::raw::c_void;
 
 use log::*;
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
 use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::{ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
-use vulkanalia::bytecode::Bytecode;
+use vulkanalia::vk::{ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands};
 
-use std::mem::size_of;
-use cgmath::{vec2, vec3};
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 
-use std::ptr::copy_nonoverlapping as memcpy;
 
-use cgmath::{point3, Deg};
 
 type Mat4 = cgmath::Matrix4<f32>;
 
 use crate::app::AppData;
-use crate::gpu_render_object::{self, GpuRenderObject};
-use crate::image::{create_image, create_image_view, transition_image_layout};
 use crate::swapchain::SwapchainSupport;
-use crate::vertex::{Vertex};
 
 
 

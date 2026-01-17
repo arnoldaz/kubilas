@@ -2,44 +2,23 @@
     dead_code,
     unused_variables,
     clippy::too_many_arguments,
-    clippy::unnecessary_wraps,
-    unused_imports
+    clippy::unnecessary_wraps
 )]
 
-use thiserror::Error;
 use anyhow::{anyhow, Result};
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
-use winit::event_loop::EventLoop;
-use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowBuilder};
 
-use std::collections::HashSet;
-use std::ffi::CStr;
-use std::os::raw::c_void;
 
-use log::*;
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::bytecode::Bytecode;
 
-use std::mem::size_of;
-use cgmath::{point3, vec2, vec3, Deg};
-use std::time::Instant;
 
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 type Mat4 = cgmath::Matrix4<f32>;
 
 use crate::app::AppData;
-use crate::cpu_render_object::{CpuRenderObject};
-use crate::swapchain::{create_swapchain, create_swapchain_image_views};
-use crate::vulkan::{begin_single_time_commands, create_buffer, create_command_buffers, create_command_pool, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_pipeline, create_sync_objects, create_uniform_buffers, end_single_time_commands, get_memory_type_index, UniformBufferObject, MAX_FRAMES_IN_FLIGHT};
+use crate::vulkan::{begin_single_time_commands, end_single_time_commands, get_memory_type_index};
 
-use std::ptr::copy_nonoverlapping as memcpy;
 
-use std::fs::File;
 
 
 pub unsafe fn create_image_view(

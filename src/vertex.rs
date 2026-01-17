@@ -2,36 +2,18 @@
     dead_code,
     unused_variables,
     clippy::too_many_arguments,
-    clippy::unnecessary_wraps,
-    unused_imports
+    clippy::unnecessary_wraps
 )]
 
-use thiserror::Error;
-use anyhow::{anyhow, Result};
-use winit::dpi::LogicalSize;
-use winit::event::{ElementState, Event, KeyEvent, WindowEvent};
-use winit::event_loop::EventLoop;
-use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowBuilder};
 
-use std::collections::HashSet;
-use std::ffi::CStr;
-use std::os::raw::c_void;
 
-use log::*;
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::bytecode::Bytecode;
 
 use std::mem::{offset_of, size_of};
-use cgmath::{vec2, vec3};
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 
-use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::io::BufReader;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
