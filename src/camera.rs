@@ -66,10 +66,8 @@ impl Camera {
             pitch_cos * yaw_sin,
         ).normalize();
 
-        let world_up = Vector3::new(0.0, 1.0, 0.0);
-
+        let world_up = Vector3::unit_y();
         let right = forward.cross(world_up).normalize();
-        let right = Vector3::new(-yaw_sin, 0.0, yaw_cos).normalize();
 
         // Forwards/backwards
         self.position += forward * (movement.amount_forward - movement.amount_backward) * movement.speed * delta_time;
