@@ -9,7 +9,7 @@ use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, KhrSurf
 
 use std::f32::consts::FRAC_PI_2;
 use std::mem::size_of;
-use cgmath::{Euler, Matrix4, Quaternion, Rad, Vector3, point3};
+use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, Vector3, point3};
 use std::time::Instant;
 
 use crate::camera::{Camera, CameraMovement, Projection};
@@ -60,7 +60,7 @@ impl App {
         create_descriptor_pool(&device, &mut data)?;
         create_descriptor_sets(&device, &mut data)?;
 
-        let translation1 = Vector3 { x: 1.0, y: 0.0, z: 0.0 };
+        let translation1 = Vector3 { x: 3.0, y: 0.0, z: 0.0 };
         let rotation1 = Euler {
             x: Rad(0.0),
             y: Rad(std::f32::consts::FRAC_PI_2),
@@ -70,7 +70,7 @@ impl App {
         let cpu_render_object1 = CpuRenderObject::new("assets/cube.obj", "assets/cube.png", translation1, rotation1, scale1)?;
         let gpu_render_object1 = GpuRenderObject::new(&instance, &device, &mut data, &cpu_render_object1)?;
 
-        let translation2 = Vector3 { x: -2.0, y: 0.0, z: 1.0 };
+        let translation2 = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
         let rotation2 = Euler {
             x: Rad(0.0),
             y: Rad(std::f32::consts::FRAC_PI_2),
@@ -83,9 +83,9 @@ impl App {
         let gpu_render_objects = vec![gpu_render_object1, gpu_render_object2];
 
         let camera = Camera::new(
-            point3(5.0, 5.0, 5.0),
-            Rad(std::f32::consts::PI),
-            Rad(std::f32::consts::FRAC_PI_4),
+            point3(0.0, 0.0, 10.0),
+            Deg(0.0),
+            Deg(-90.0),
         );
 
         let projection = Projection::new(

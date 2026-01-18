@@ -1,4 +1,4 @@
-use std::{time::Duration};
+use std::{f32::consts::FRAC_PI_2, time::Duration};
 use cgmath::{InnerSpace, Matrix4, Point3, Rad, Vector3, perspective};
 
 pub const PROJECTION_CORRECTION_MATRIX: Matrix4<f32> = Matrix4::new(
@@ -36,8 +36,8 @@ pub struct CameraMovement {
 
 
 impl Camera {
-    pub fn new(position: Point3<f32>, pitch: Rad<f32>, yaw: Rad<f32>) -> Self {
-        Self { position, pitch, yaw }
+    pub fn new<P3: Into<Point3<f32>>, P: Into<Rad<f32>>, Y: Into<Rad<f32>>>(position: P3, pitch: P, yaw: Y) -> Self {
+        Self { position: position.into(), pitch: pitch.into(), yaw: yaw.into() }
     }
 
     pub fn get_view_matrix(&self) -> Matrix4<f32> {
@@ -69,20 +69,28 @@ impl Camera {
             pitch_sin,
             pitch_cos * yaw_sin,
         ).normalize();
+
+        let world_up = Vector3::new(0.0, 1.0, 0.0);
+
+        let right = forward.cross(world_up).normalize();
         let right = Vector3::new(-yaw_sin, 0.0, yaw_cos).normalize();
 
         // Forwards/backwards
         self.position += forward * (movement.amount_forward - movement.amount_backward) * movement.speed * delta_time;
         
         // Left/right
-        self.position += right * -(movement.amount_right - movement.amount_left) * movement.speed * delta_time;
+        self.position += right * (movement.amount_right - movement.amount_left) * movement.speed * delta_time;
 
         // Up/down
         self.position.y += (movement.amount_up - movement.amount_down) * movement.speed * delta_time;
 
         // Rotate
         self.yaw += Rad(movement.rotate_horizontal) * movement.sensitivity * delta_time;
-        self.pitch += Rad(movement.rotate_vertical) * movement.sensitivity * delta_time;
+        self.pitch -= Rad(movement.rotate_vertical) * movement.sensitivity * delta_time;
+
+        // Prevent camera flips
+        let max_pitch = FRAC_PI_2 - 0.01;
+        self.pitch.0 = self.pitch.0.clamp(-max_pitch, max_pitch);
     }
 }
 
