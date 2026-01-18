@@ -85,8 +85,8 @@ impl Camera {
         self.position.y += (movement.amount_up - movement.amount_down) * movement.speed * delta_time;
 
         // Rotate
-        self.yaw += Rad(movement.rotate_horizontal) * movement.sensitivity * delta_time;
-        self.pitch -= Rad(movement.rotate_vertical) * movement.sensitivity * delta_time;
+        self.yaw += Rad(movement.rotate_horizontal) * movement.sensitivity;
+        self.pitch -= Rad(movement.rotate_vertical) * movement.sensitivity;
 
         // Prevent camera flips
         let max_pitch = FRAC_PI_2 - 0.01;

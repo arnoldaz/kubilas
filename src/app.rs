@@ -96,7 +96,7 @@ impl App {
             10000.0,
         );
 
-        let camera_movement = CameraMovement::new(5.0, 5.0);
+        let camera_movement = CameraMovement::new(5.0, 0.0025);
 
         create_uniform_buffers(&instance, &device, &mut data)?;
         create_command_buffers(&device, &mut data)?;
