@@ -7,7 +7,6 @@ use vulkanalia::window as vk_window;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
 
-use std::f32::consts::FRAC_PI_2;
 use std::mem::size_of;
 use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, Vector3, point3};
 use std::time::Instant;
@@ -91,7 +90,7 @@ impl App {
         let projection = Projection::new(
             data.swapchain_extent.width,
             data.swapchain_extent.height,
-            Rad(FRAC_PI_2),
+            Deg(90.0),
             0.1,
             10000.0,
         );

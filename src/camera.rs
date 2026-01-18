@@ -9,9 +9,9 @@ pub const PROJECTION_CORRECTION_MATRIX: Matrix4<f32> = Matrix4::new(
 );
 
 pub struct Camera {
-    pub position: Point3<f32>,
-    pub pitch: Rad<f32>,
-    pub yaw: Rad<f32>,
+    position: Point3<f32>,
+    pitch: Rad<f32>,
+    yaw: Rad<f32>,
 }
 
 pub struct Projection {
@@ -33,7 +33,6 @@ pub struct CameraMovement {
     speed: f32,
     sensitivity: f32,
 }
-
 
 impl Camera {
     pub fn new<P3: Into<Point3<f32>>, P: Into<Rad<f32>>, Y: Into<Rad<f32>>>(position: P3, pitch: P, yaw: Y) -> Self {
@@ -60,9 +59,6 @@ impl Camera {
 
         let (yaw_sin, yaw_cos) = self.yaw.0.sin_cos();
         let (pitch_sin, pitch_cos) = self.pitch.0.sin_cos();
-
-        // FPS style (always move forward ignoring mouse vertical position)
-        // let forward = Vector3::new(yaw_cos, 0.0, yaw_sin).normalize();
 
         let forward = Vector3::new(
             pitch_cos * yaw_cos,
@@ -95,10 +91,10 @@ impl Camera {
 }
 
 impl Projection {
-    pub fn new(width: u32, height: u32, fov_y: Rad<f32>, z_near: f32, z_far: f32) -> Self {
+    pub fn new<P: Into<Rad<f32>>>(width: u32, height: u32, fov_y: P, z_near: f32, z_far: f32) -> Self {
         Self {
             aspect: width as f32 / height as f32,
-            fov_y,
+            fov_y: fov_y.into(),
             z_near,
             z_far,
         }
