@@ -14,3 +14,4 @@ tobj = { version = "3", features = ["log"] }
 vulkanalia = { version = "0.34.0", features = ["libloading", "provisional", "window"] }
 winit = "0.30.12"
 rand = "0.9.2"
+vulkanalia-vma = "0.8.0"

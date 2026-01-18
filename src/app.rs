@@ -3,7 +3,7 @@ use winit::window::Window;
 
 
 use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::window as vk_window;
+use vulkanalia::{window as vk_window};
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
 
@@ -20,6 +20,7 @@ use crate::validations::{VALIDATION_ENABLED, create_instance, create_logical_dev
 use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_pipeline, create_sync_objects, create_uniform_buffers};
 
 use std::ptr::copy_nonoverlapping as memcpy;
+use vulkanalia_vma::{self as vma};
 
 pub struct App {
     pub entry: Entry,
@@ -47,12 +48,15 @@ impl App {
         let device = create_logical_device(&entry, &instance, &mut data)?;
         create_swapchain(window, &instance, &device, &mut data)?;
         create_swapchain_image_views(&device, &mut data)?;
-        // create_render_pass(&instance, &device, &mut data)?;
         create_descriptor_set_layout(&device, &mut data)?;
         create_pipeline(&instance, &device, &mut data)?;
         create_command_pool(&instance, &device, &mut data)?;
         create_depth_objects(&instance, &device, &mut data)?;
-        // create_framebuffers(&device, &mut data)?;
+
+        let allocator_options = vma::AllocatorOptions::new(&instance, &device, data.physical_device);
+        // allocator_options.version = Version::V1_4_0;
+        let allocator = vma::Allocator::new(&allocator_options)?;
+        data.allocator = Some(allocator);
 
         create_texture_sampler(&device, &mut data)?;
 
@@ -200,7 +204,7 @@ impl App {
 
         self.gpu_render_objects
             .iter()
-            .for_each(|o| o.destroy(&self.device));
+            .for_each(|o| o.destroy(&self.device, self.data.allocator.as_ref().unwrap()));
 
         self.data.in_flight_fences
             .iter()
@@ -212,6 +216,9 @@ impl App {
             .iter()
             .for_each(|s| self.device.destroy_semaphore(*s, None));
         self.device.destroy_command_pool(self.data.command_pool, None);
+        if let Some(allocator) = self.data.allocator.take() {
+            drop(allocator);
+        }
         self.device.destroy_device(None);
         self.instance.destroy_surface_khr(self.data.surface, None);
     
@@ -443,7 +450,7 @@ impl App {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct AppData {
     pub surface: vk::SurfaceKHR,
     pub messenger: vk::DebugUtilsMessengerEXT,
@@ -483,4 +490,6 @@ pub struct AppData {
     pub depth_image: vk::Image,
     pub depth_image_memory: vk::DeviceMemory,
     pub depth_image_view: vk::ImageView,
+
+    pub allocator: Option<vma::Allocator>,
 }
