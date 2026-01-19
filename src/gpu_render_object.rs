@@ -1,7 +1,4 @@
 use anyhow::Result;
-
-
-// use log::*;
 use vulkanalia::prelude::v1_0::*;
 
 use std::mem::size_of;
@@ -10,16 +7,12 @@ use cgmath::{Euler, Rad, Vector3};
 use crate::app::AppData;
 use crate::cpu_render_object::CpuRenderObject;
 use crate::image::{copy_buffer_to_image, create_image, create_image_view, transition_image_layout};
-use crate::vertex::Vertex;
-use crate::vulkan::{copy_buffer, create_buffer};
+use crate::vulkan::{create_buffer};
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 
-
 use std::ptr::copy_nonoverlapping as memcpy;
 use vulkanalia_vma::{self as vma, Alloc, Allocator};
-
-
 
 #[derive(Clone, Debug)]
 pub struct GpuRenderObject {
@@ -41,9 +34,9 @@ impl GpuRenderObject {
     pub unsafe fn new(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &mut AppData, cpu_render_object: &CpuRenderObject) -> Result<Self> {
         let (texture_image, texture_image_memory, texture_image_view, sampler_index) = create_texture_image(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
 
-        // TODO: check how can I pass rust vector readonly to function
-        let (vertex_buffer, vertex_allocation) = create_vertex_buffer(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
-        let (index_buffer, index_allocation) = create_index_buffer(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
+        let allocator = app_data.allocator.as_ref().unwrap();
+        let (vertex_buffer, vertex_allocation) = create_gpu_buffer(allocator, &cpu_render_object.vertices, vk::BufferUsageFlags::VERTEX_BUFFER)?;
+        let (index_buffer, index_allocation) = create_gpu_buffer(allocator, &cpu_render_object.indices, vk::BufferUsageFlags::INDEX_BUFFER)?;
 
         Ok(GpuRenderObject {
             texture_image,
@@ -166,17 +159,6 @@ pub unsafe fn create_texture_image(vulkan_instance: &Instance, vulkan_device: &D
     vulkan_device.update_descriptor_sets(&[sampler_write], &[] as &[vk::CopyDescriptorSet]);
 
     Ok((texture_image, texture_image_memory, texture_image_view, app_data.sampler_index as u32))
-}
-
-
-pub unsafe fn create_vertex_buffer(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &AppData, cpu_render_object: &CpuRenderObject) -> Result<(vk::Buffer, vma::Allocation)> {
-    let allocator = app_data.allocator.as_ref().unwrap();
-    create_gpu_buffer(allocator, &cpu_render_object.vertices, vk::BufferUsageFlags::VERTEX_BUFFER)
-}
-
-pub unsafe fn create_index_buffer(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &AppData, cpu_render_object: &CpuRenderObject) -> Result<(vk::Buffer, vma::Allocation)> {
-    let allocator = app_data.allocator.as_ref().unwrap();
-    create_gpu_buffer(allocator, &cpu_render_object.indices, vk::BufferUsageFlags::INDEX_BUFFER)
 }
 
 pub unsafe fn create_gpu_buffer<T: Copy, S: AsRef<[T]>>(allocator: &Allocator, data: S, usage_flag: vk::BufferUsageFlags) -> Result<(vk::Buffer, vma::Allocation)> {
