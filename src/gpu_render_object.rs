@@ -7,7 +7,7 @@ use cgmath::{Euler, Rad, Vector3};
 use crate::app::AppData;
 use crate::cpu_render_object::CpuRenderObject;
 use crate::image::{copy_buffer_to_image, create_image, create_image_view, transition_image_layout};
-use crate::vulkan::{create_buffer};
+use crate::vulkan::{copy_buffer, create_buffer};
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
 
@@ -35,8 +35,8 @@ impl GpuRenderObject {
         let (texture_image, texture_image_memory, texture_image_view, sampler_index) = create_texture_image(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
 
         let allocator = app_data.allocator.as_ref().unwrap();
-        let (vertex_buffer, vertex_allocation) = create_gpu_buffer(allocator, &cpu_render_object.vertices, vk::BufferUsageFlags::VERTEX_BUFFER)?;
-        let (index_buffer, index_allocation) = create_gpu_buffer(allocator, &cpu_render_object.indices, vk::BufferUsageFlags::INDEX_BUFFER)?;
+        let (vertex_buffer, vertex_allocation) = create_gpu_buffer(allocator, &cpu_render_object.vertices, vk::BufferUsageFlags::VERTEX_BUFFER, vulkan_device, app_data)?;
+        let (index_buffer, index_allocation) = create_gpu_buffer(allocator, &cpu_render_object.indices, vk::BufferUsageFlags::INDEX_BUFFER, vulkan_device, app_data)?;
 
         Ok(GpuRenderObject {
             texture_image,
@@ -161,7 +161,7 @@ pub unsafe fn create_texture_image(vulkan_instance: &Instance, vulkan_device: &D
     Ok((texture_image, texture_image_memory, texture_image_view, app_data.sampler_index as u32))
 }
 
-pub unsafe fn create_gpu_buffer<T: Copy, S: AsRef<[T]>>(allocator: &Allocator, data: S, usage_flag: vk::BufferUsageFlags) -> Result<(vk::Buffer, vma::Allocation)> {
+pub unsafe fn create_gpu_buffer<T: Copy, S: AsRef<[T]>>(allocator: &Allocator, data: S, usage_flag: vk::BufferUsageFlags, device: &Device, app_data: &AppData) -> Result<(vk::Buffer, vma::Allocation)> {
     let data_slice = data.as_ref();
     let size = (size_of::<T>() * data_slice.len()) as u64;
 
@@ -178,8 +178,47 @@ pub unsafe fn create_gpu_buffer<T: Copy, S: AsRef<[T]>>(allocator: &Allocator, d
 
     let (buffer, allocation) = allocator.create_buffer(buffer_create_info, &allocation_options)?;
 
-    let mapped = allocator.map_memory(allocation)? as *mut T;
-    mapped.copy_from_nonoverlapping(data_slice.as_ptr(), data_slice.len());
+    // Check if BAR memory is full or not available
+    let allocation_info = allocator.get_allocation_info(allocation);
+    let memory_properties = allocator.get_memory_properties();
+
+    let memory_type_index = allocation_info.memoryType as usize;
+    let memory_type_flags = memory_properties.memory_types[memory_type_index].property_flags;
+
+    let is_bar_memory = memory_type_flags.contains(vk::MemoryPropertyFlags::DEVICE_LOCAL) && memory_type_flags.contains(vk::MemoryPropertyFlags::HOST_VISIBLE);
+
+    // If buffer is not in BAR memory, it means it was placed directly into GPU read only buffer (DEVICE_LOCAL)
+    if !is_bar_memory {
+        println!("Buffer not in BAR, need staging buffer");
+
+        let buffer_create_info = vk::BufferCreateInfo::builder()
+            .size(size)
+            .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+        let allocation_options = vma::AllocationOptions {
+            flags: vma::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE,
+            usage: vma::MemoryUsage::Auto,
+            ..Default::default()
+        };
+
+        let (staging_buffer, staging_allocation) = allocator.create_buffer(buffer_create_info, &allocation_options)?;
+
+        let buffer_data = allocator.map_memory(staging_allocation)? as *mut T;
+        buffer_data.copy_from_nonoverlapping(data_slice.as_ptr(), data_slice.len());
+        allocator.unmap_memory(staging_allocation);
+
+        // Copy staging buffer to already created DEVICE_LOCAL GPU buffer
+        copy_buffer(device, app_data, staging_buffer, buffer, size)?;
+
+        allocator.destroy_buffer(staging_buffer, staging_allocation);
+
+        return Ok((buffer, allocation));
+    }
+
+    // Copy data to the buffer
+    let buffer_data = allocator.map_memory(allocation)? as *mut T;
+    buffer_data.copy_from_nonoverlapping(data_slice.as_ptr(), data_slice.len());
     allocator.unmap_memory(allocation);
 
     Ok((buffer, allocation))
