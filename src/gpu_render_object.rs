@@ -17,7 +17,7 @@ type Vec3 = cgmath::Vector3<f32>;
 
 
 use std::ptr::copy_nonoverlapping as memcpy;
-use vulkanalia_vma::{self as vma, Alloc};
+use vulkanalia_vma::{self as vma, Alloc, Allocator};
 
 
 
@@ -28,7 +28,7 @@ pub struct GpuRenderObject {
     pub texture_image_view: vk::ImageView,
     pub indices_count: u32,
     pub vertex_buffer: vk::Buffer,
-    pub vertex_buffer_memory: vk::DeviceMemory,
+    pub vertex_allocation: vma::Allocation,
     pub index_buffer: vk::Buffer,
     pub index_allocation: vma::Allocation,
     pub translation: Vector3<f32>,
@@ -42,7 +42,7 @@ impl GpuRenderObject {
         let (texture_image, texture_image_memory, texture_image_view, sampler_index) = create_texture_image(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
 
         // TODO: check how can I pass rust vector readonly to function
-        let (vertex_buffer, vertex_buffer_memory) = create_vertex_buffer(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
+        let (vertex_buffer, vertex_allocation) = create_vertex_buffer(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
         let (index_buffer, index_allocation) = create_index_buffer(vulkan_instance, vulkan_device, app_data, cpu_render_object)?;
 
         Ok(GpuRenderObject {
@@ -51,7 +51,7 @@ impl GpuRenderObject {
             texture_image_view,
             indices_count: cpu_render_object.indices.len() as u32,
             vertex_buffer,
-            vertex_buffer_memory,
+            vertex_allocation,
             index_buffer,
             index_allocation,
             translation: cpu_render_object.translation,
@@ -67,8 +67,7 @@ impl GpuRenderObject {
         vulkan_device.free_memory(self.texture_image_memory, None);
 
         allocator.destroy_buffer(self.index_buffer, self.index_allocation);
-        vulkan_device.destroy_buffer(self.vertex_buffer, None);
-        vulkan_device.free_memory(self.vertex_buffer_memory, None);
+        allocator.destroy_buffer(self.vertex_buffer, self.vertex_allocation);
     }
 }
 
@@ -170,75 +169,36 @@ pub unsafe fn create_texture_image(vulkan_instance: &Instance, vulkan_device: &D
 }
 
 
-pub unsafe fn create_vertex_buffer(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &AppData, cpu_render_object: &CpuRenderObject) -> Result<(vk::Buffer, vk::DeviceMemory)> {
-    let size = (size_of::<Vertex>() * cpu_render_object.vertices.len()) as u64;
-
-    let (staging_buffer, staging_buffer_memory) = create_buffer(
-        vulkan_instance,
-        vulkan_device,
-        app_data,
-        size,
-        vk::BufferUsageFlags::TRANSFER_SRC,
-        vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
-    )?;
-
-    let memory = vulkan_device.map_memory(
-        staging_buffer_memory,
-        0,
-        size,
-        vk::MemoryMapFlags::empty(),
-    )?;
-
-    memcpy(cpu_render_object.vertices.as_ptr(), memory.cast(), cpu_render_object.vertices.len());
-
-    vulkan_device.unmap_memory(staging_buffer_memory);
-
-    let (vertex_buffer, vertex_buffer_memory) = create_buffer(
-        vulkan_instance,
-        vulkan_device,
-        app_data,
-        size,
-        vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::VERTEX_BUFFER,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL,
-    )?;
-
-    // data.vertex_buffer = vertex_buffer;
-    // data.vertex_buffer_memory = vertex_buffer_memory;
-
-    copy_buffer(vulkan_device, app_data, staging_buffer, vertex_buffer, size)?;
-
-    vulkan_device.destroy_buffer(staging_buffer, None);
-    vulkan_device.free_memory(staging_buffer_memory, None);
-
-    Ok((vertex_buffer, vertex_buffer_memory))
+pub unsafe fn create_vertex_buffer(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &AppData, cpu_render_object: &CpuRenderObject) -> Result<(vk::Buffer, vma::Allocation)> {
+    let allocator = app_data.allocator.as_ref().unwrap();
+    create_gpu_buffer(allocator, &cpu_render_object.vertices, vk::BufferUsageFlags::VERTEX_BUFFER)
 }
 
 pub unsafe fn create_index_buffer(vulkan_instance: &Instance, vulkan_device: &Device, app_data: &AppData, cpu_render_object: &CpuRenderObject) -> Result<(vk::Buffer, vma::Allocation)> {
-    
     let allocator = app_data.allocator.as_ref().unwrap();
-    let size = (size_of::<u32>() * cpu_render_object.indices.len()) as u64;
+    create_gpu_buffer(allocator, &cpu_render_object.indices, vk::BufferUsageFlags::INDEX_BUFFER)
+}
+
+pub unsafe fn create_gpu_buffer<T: Copy, S: AsRef<[T]>>(allocator: &Allocator, data: S, usage_flag: vk::BufferUsageFlags) -> Result<(vk::Buffer, vma::Allocation)> {
+    let data_slice = data.as_ref();
+    let size = (size_of::<T>() * data_slice.len()) as u64;
 
     let buffer_create_info = vk::BufferCreateInfo::builder()
         .size(size)
-        .usage(vk::BufferUsageFlags::TRANSFER_SRC)
+        .usage(vk::BufferUsageFlags::TRANSFER_DST | usage_flag)
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
-    let mut allocation_options = vma::AllocationOptions::default();
-    allocation_options.flags = vma::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE;
-    let (staging_buffer, staging_allocation) = allocator.create_buffer(buffer_create_info, &allocation_options)?;
 
-    let mapped = allocator.map_memory(staging_allocation)? as *mut u32;
-    mapped.copy_from_nonoverlapping(cpu_render_object.indices.as_ptr(), cpu_render_object.indices.len());
-    allocator.unmap_memory(staging_allocation);
+    let allocation_options = vma::AllocationOptions {
+        flags: vma::AllocationCreateFlags::HOST_ACCESS_SEQUENTIAL_WRITE | vma::AllocationCreateFlags::HOST_ACCESS_ALLOW_TRANSFER_INSTEAD,
+        usage: vma::MemoryUsage::Auto,
+        ..Default::default()
+    };
 
-    let buffer_create_info = vk::BufferCreateInfo::builder()
-        .size(size)
-        .usage(vk::BufferUsageFlags::TRANSFER_DST | vk::BufferUsageFlags::INDEX_BUFFER)
-        .sharing_mode(vk::SharingMode::EXCLUSIVE);
-    let (index_buffer, index_allocation) = allocator.create_buffer(buffer_create_info, &allocation_options)?;
+    let (buffer, allocation) = allocator.create_buffer(buffer_create_info, &allocation_options)?;
 
-    copy_buffer(vulkan_device, app_data, staging_buffer, index_buffer, size)?;
+    let mapped = allocator.map_memory(allocation)? as *mut T;
+    mapped.copy_from_nonoverlapping(data_slice.as_ptr(), data_slice.len());
+    allocator.unmap_memory(allocation);
 
-    allocator.destroy_buffer(staging_buffer, staging_allocation);
-
-    Ok((index_buffer, index_allocation))
+    Ok((buffer, allocation))
 }
