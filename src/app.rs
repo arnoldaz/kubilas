@@ -8,14 +8,18 @@ use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
 
 use std::mem::size_of;
-use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, Vector3, point3};
+use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, Vector2, Vector3, Zero, point3};
 use std::time::Instant;
 
+use crate::bitmap::Bitmap;
 use crate::camera::{Camera, CameraMovement, Projection};
-use crate::cpu_render_object::CpuRenderObject;
-use crate::gpu_render_object::GpuRenderObject;
+use crate::gpu_mesh::GpuMesh;
 use crate::image::{create_texture_sampler};
+use crate::mesh::Mesh;
+use crate::registry::{MeshRegistry, Registry, TextureId, TextureRegistry};
+use crate::scene::{GpuEntity, Transform};
 use crate::swapchain::{create_swapchain, create_swapchain_image_views};
+use crate::texture::{Texture};
 use crate::validations::{VALIDATION_ENABLED, create_instance, create_logical_device, pick_physical_device};
 use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_pipeline, create_sync_objects, create_uniform_buffers};
 
@@ -30,7 +34,9 @@ pub struct App {
     pub frame: usize,
     pub resized: bool,
     pub start: Instant,
-    pub gpu_render_objects: Vec<GpuRenderObject>,
+    pub gpu_entities: Vec<GpuEntity>,
+    pub mesh_registry: MeshRegistry,
+    pub texture_registry: TextureRegistry,
 
     pub camera: Camera,
     pub projection: Projection,
@@ -41,7 +47,9 @@ impl App {
     pub unsafe fn create(window: &Window) -> Result<Self> {
         let loader = LibloadingLoader::new(LIBRARY)?;
         let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
+
         let mut data = AppData::default();
+
         let instance = create_instance(window, &entry, &mut data)?;
         data.surface = vk_window::create_surface(&instance, &window, &window)?;
         pick_physical_device(&instance, &mut data)?;
@@ -63,28 +71,9 @@ impl App {
         create_descriptor_pool(&device, &mut data)?;
         create_descriptor_sets(&device, &mut data)?;
 
-        let translation1 = Vector3 { x: 3.0, y: 0.0, z: 0.0 };
-        let rotation1 = Euler {
-            x: Rad(0.0),
-            y: Rad(std::f32::consts::FRAC_PI_2),
-            z: Rad(0.0),
-        };
-        let scale1 = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
-        let cpu_render_object1 = CpuRenderObject::new("assets/cube.obj", "assets/cube.png", translation1, rotation1, scale1)?;
-        let gpu_render_object1 = GpuRenderObject::new(&instance, &device, &mut data, &cpu_render_object1)?;
+        let allocator = data.allocator.as_ref().unwrap();
 
-        let translation2 = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
-        let rotation2 = Euler {
-            x: Rad(0.0),
-            y: Rad(std::f32::consts::FRAC_PI_2),
-            z: Rad(0.0),
-        };
-        let scale2 = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
-        let cpu_render_object2 = CpuRenderObject::new("assets/teapot.obj", "assets/viking_room.png", translation2, rotation2, scale2)?;
-        let gpu_render_object2 = GpuRenderObject::new(&instance, &device, &mut data, &cpu_render_object2)?;
-
-        let gpu_render_objects = vec![gpu_render_object1, gpu_render_object2];
-
+        // Scene general
         let camera = Camera::new(
             point3(0.0, 0.0, 10.0),
             Deg(0.0),
@@ -101,11 +90,86 @@ impl App {
 
         let camera_movement = CameraMovement::new(5.0, 0.0025);
 
+        // CPU side
+        let cube_mesh = Mesh::create_from_model("assets/cube.obj")?;
+        let teapot_mesh = Mesh::create_from_model("assets/teapot.obj")?;
+
+        let cube_bitmap = Bitmap::create_from_file("assets/cube.png")?;
+        let teapot_bitmap = Bitmap::create_from_file("assets/viking_room.png")?;
+        let white_bitmap = Bitmap::white();
+
+        let rotation = Euler { x: Rad(0.0), y: Rad(std::f32::consts::FRAC_PI_2), z: Rad(0.0) };
+        let scale = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
+
+        let translation1 = Vector3 { x: 3.0, y: 0.0, z: 0.0 };
+        let translation2 = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
+        let translation3 = Vector3 { x: -7.0, y: 0.0, z: 0.0 };
+        let translation4 = Vector3 { x: -10.0, y: 0.0, z: 0.0 };
+        let translation5 = Vector3 { x: -15.0, y: 0.0, z: 10.0 };
+
+        let transform1 = Transform::new(translation1, rotation, scale);
+        let transform2 = Transform::new(translation2, rotation, scale);
+        let transform3 = Transform::new(translation3, rotation, scale);
+        let transform4 = Transform::new(translation4, rotation, scale);
+        let transform5 = Transform::new(translation5, rotation, scale);
+
+        // GPU side
+        let cube_gpu_mesh = GpuMesh::create_from_mesh(&cube_mesh, allocator, &device, &data)?;
+        let teapot_gpu_mesh = GpuMesh::create_from_mesh(&teapot_mesh, allocator, &device, &data)?;
+        let sphere_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_sphere(), allocator, &device, &data)?;
+        let generated_cube_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_cube(), allocator, &device, &data)?;
+        let tetrahedron_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_tetrahedron(), allocator, &device, &data)?;
+
+        let mut mesh_registry = MeshRegistry::new();
+        let cube_mesh_id = mesh_registry.add(cube_gpu_mesh);
+        let teapot_mesh_id = mesh_registry.add(teapot_gpu_mesh);
+        let sphere_mesh_id = mesh_registry.add(sphere_gpu_mesh);
+        let generated_cube_mesh_id = mesh_registry.add(generated_cube_gpu_mesh);
+        let tetrahedron_mesh_id = mesh_registry.add(tetrahedron_gpu_mesh);
+
+        let cube_texture = Texture::create_from_bitmap(&cube_bitmap, &instance, &device, &mut data)?;
+        let teapot_texture = Texture::create_from_bitmap(&teapot_bitmap, &instance, &device, &mut data)?;
+        let white_texture = Texture::create_from_bitmap(&white_bitmap, &instance, &device, &mut data)?;
+
+        let mut texture_registry = TextureRegistry::new();
+        let cube_texture_id = texture_registry.add(cube_texture);
+        let teapot_texture_id = texture_registry.add(teapot_texture);
+        let white_texture_id = texture_registry.add(white_texture);
+
+        // Entities
+        let entity1 = GpuEntity::new(cube_mesh_id, cube_texture_id, transform1);
+        let entity2 = GpuEntity::new(teapot_mesh_id, teapot_texture_id, transform2);
+        let entity3 = GpuEntity::new(sphere_mesh_id, white_texture_id, transform3);
+        let entity4 = GpuEntity::new(generated_cube_mesh_id, white_texture_id, transform4);
+        let entity5 = GpuEntity::new(tetrahedron_mesh_id, white_texture_id, transform5);
+
+        let entities = vec![entity1, entity2, entity3, entity4, entity5];
+
+        for id in 0..texture_registry.size() {
+            let texture = texture_registry.get(TextureId(id));
+            // data.sampler_index += 1;
+            let image_info = vk::DescriptorImageInfo::builder()
+                .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                .image_view(texture.image_view)
+                .sampler(data.texture_sampler);
+
+            let image_infos = &[image_info];
+            let sampler_write = vk::WriteDescriptorSet::builder()
+                .dst_set(data.descriptor_set)
+                .dst_binding(1)
+                .dst_array_element(id as u32)
+                .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                .image_info(image_infos);
+
+            device.update_descriptor_sets(&[sampler_write], &[] as &[vk::CopyDescriptorSet]);
+        }
+
+
         create_uniform_buffers(&instance, &device, &mut data)?;
         create_command_buffers(&device, &mut data)?;
         create_sync_objects(&device, &mut data)?;
 
-        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_render_objects, camera, projection, camera_movement })
+        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_entities: entities, mesh_registry, texture_registry, camera, projection, camera_movement })
     }
 
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
@@ -202,9 +266,22 @@ impl App {
         self.device.destroy_sampler(self.data.texture_sampler, None);
         self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
 
-        self.gpu_render_objects
-            .iter()
-            .for_each(|o| o.destroy(&self.device, self.data.allocator.as_ref().unwrap()));
+        // self.gpu_render_objects
+        //     .iter()
+        //     .for_each(|o| o.destroy(&self.device, self.data.allocator.as_ref().unwrap()));
+
+        for texture in self.texture_registry.into_items() {
+            self.device.destroy_image_view(texture.image_view, None);
+            self.device.destroy_image(texture.image, None);
+            self.device.free_memory(texture.image_memory, None);
+        }
+
+        let allocator = self.data.allocator.take().expect("AAAA");
+        for mesh in self.mesh_registry.into_items() {
+            allocator.destroy_buffer(mesh.index_buffer.buffer, mesh.index_buffer.allocation);
+            allocator.destroy_buffer(mesh.vertex_buffer.buffer, mesh.vertex_buffer.allocation);
+        }
+
 
         self.data.in_flight_fences
             .iter()
@@ -216,9 +293,7 @@ impl App {
             .iter()
             .for_each(|s| self.device.destroy_semaphore(*s, None));
         self.device.destroy_command_pool(self.data.command_pool, None);
-        if let Some(allocator) = self.data.allocator.take() {
-            drop(allocator);
-        }
+        drop(allocator);
         self.device.destroy_device(None);
         self.instance.destroy_surface_khr(self.data.surface, None);
     
@@ -369,15 +444,18 @@ impl App {
             &[],
         );
 
-        for gpu_render_object in &self.gpu_render_objects {
-            // TODO: have only 1 buffer for both and use offset instead, nvidia dev guide says it's very bad now
-            self.device.cmd_bind_vertex_buffers(command_buffer, 0, &[gpu_render_object.vertex_buffer], &[0]);
-            self.device.cmd_bind_index_buffer(command_buffer, gpu_render_object.index_buffer, 0, vk::IndexType::UINT32);
+        for gpu_entity in &self.gpu_entities {
+            let mesh = self.mesh_registry.get(gpu_entity.mesh_id);
+            let texture = self.texture_registry.get(gpu_entity.texture_id);
 
-            let mut new_rotation = gpu_render_object.rotation.clone();
+            // TODO: have only 1 buffer for both and use offset instead, nvidia dev guide says it's very bad now
+            self.device.cmd_bind_vertex_buffers(command_buffer, 0, &[mesh.vertex_buffer.buffer], &[0]);
+            self.device.cmd_bind_index_buffer(command_buffer, mesh.index_buffer.buffer, 0, vk::IndexType::UINT32);
+
+            let mut new_rotation = gpu_entity.transform.rotation.clone();
             new_rotation.y *= time;
             let new_quaternion = Quaternion::from(new_rotation);
-            let model = Self::trs_matrix(gpu_render_object.translation, new_quaternion, gpu_render_object.scale);
+            let model = Self::trs_matrix(gpu_entity.transform.translation, new_quaternion, gpu_entity.transform.scale);
             let model_bytes = std::slice::from_raw_parts(
                 &model as *const Matrix4<f32> as *const u8,
                 size_of::<Matrix4<f32>>()
@@ -391,7 +469,7 @@ impl App {
                 model_bytes,
             );
 
-            let obj_index_bytes = std::slice::from_raw_parts(&(gpu_render_object.sampler_index) as *const u32 as *const u8, 4);
+            let obj_index_bytes = std::slice::from_raw_parts(&(gpu_entity.texture_id.0 as u32) as *const u32 as *const u8, 4);
             self.device.cmd_push_constants(
                 command_buffer,
                 self.data.pipeline_layout,
@@ -400,7 +478,7 @@ impl App {
                 obj_index_bytes,
             );
 
-            self.device.cmd_draw_indexed(command_buffer, gpu_render_object.indices_count, 1, 0, 0, 0);
+            self.device.cmd_draw_indexed(command_buffer, mesh.index_count, 1, 0, 0, 0);
         }
 
         self.device.cmd_end_rendering(command_buffer);
@@ -482,7 +560,7 @@ pub struct AppData {
     pub descriptor_pool: vk::DescriptorPool,
     pub descriptor_set: vk::DescriptorSet,
     pub ubo_index: i32,
-    pub sampler_index: i32,
+    // pub sampler_index: i32,
     // pub texture_image: vk::Image,
     // pub texture_image_memory: vk::DeviceMemory,
     // pub texture_image_view: vk::ImageView,

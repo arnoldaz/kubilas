@@ -1,12 +1,5 @@
-#![allow(
-    dead_code,
-    unused_variables,
-    clippy::too_many_arguments,
-    clippy::unnecessary_wraps
-)]
 
-
-
+use cgmath::{Vector2, Vector3};
 use vulkanalia::prelude::v1_0::*;
 
 use std::mem::{offset_of, size_of};
@@ -16,39 +9,31 @@ type Vec3 = cgmath::Vector3<f32>;
 use std::hash::{Hash, Hasher};
 
 #[repr(C)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Vertex {
-    pub pos: Vec3,
-    pub color: Vec3,
-    pub tex_coord: Vec2,
-}
-
-impl PartialEq for Vertex {
-    fn eq(&self, other: &Self) -> bool {
-        self.pos == other.pos
-            && self.color == other.color
-            && self.tex_coord == other.tex_coord
-    }
+    pub position: Vector3<f32>,
+    pub color: Vector3<f32>,
+    pub texture_coordinates: Vector2<f32>,
 }
 
 impl Eq for Vertex {}
 
 impl Hash for Vertex {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.pos[0].to_bits().hash(state);
-        self.pos[1].to_bits().hash(state);
-        self.pos[2].to_bits().hash(state);
+        self.position[0].to_bits().hash(state);
+        self.position[1].to_bits().hash(state);
+        self.position[2].to_bits().hash(state);
         self.color[0].to_bits().hash(state);
         self.color[1].to_bits().hash(state);
         self.color[2].to_bits().hash(state);
-        self.tex_coord[0].to_bits().hash(state);
-        self.tex_coord[1].to_bits().hash(state);
+        self.texture_coordinates[0].to_bits().hash(state);
+        self.texture_coordinates[1].to_bits().hash(state);
     }
 }
 
 impl Vertex {
     pub const fn new(pos: Vec3, color: Vec3, tex_coord: Vec2) -> Self {
-        Self { pos, color, tex_coord }
+        Self { position: pos, color, texture_coordinates: tex_coord }
     }
 
     pub fn binding_description() -> vk::VertexInputBindingDescription {
@@ -64,7 +49,7 @@ impl Vertex {
             .binding(0)
             .location(0)
             .format(vk::Format::R32G32B32_SFLOAT)
-            .offset(offset_of!(Vertex, pos) as u32)
+            .offset(offset_of!(Vertex, position) as u32)
             .build();
 
         let color = vk::VertexInputAttributeDescription::builder()
@@ -78,7 +63,7 @@ impl Vertex {
             .binding(0)
             .location(2)
             .format(vk::Format::R32G32_SFLOAT)
-            .offset(offset_of!(Vertex, tex_coord) as u32)
+            .offset(offset_of!(Vertex, texture_coordinates) as u32)
             .build();
 
         [pos, color, tex_coord]

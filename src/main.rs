@@ -10,10 +10,15 @@ mod app;
 mod vulkan;
 mod swapchain;
 mod image;
-mod cpu_render_object;
-mod gpu_render_object;
 mod validations;
 mod camera;
+mod buffer;
+mod texture;
+mod mesh;
+mod scene;
+mod registry;
+mod bitmap;
+mod gpu_mesh;
 
 use std::time::{Instant};
 

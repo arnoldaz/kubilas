@@ -1,33 +1,16 @@
-
-
-
-
-
 use anyhow::{anyhow, Result};
-
-
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::bytecode::Bytecode;
-
 use std::mem::size_of;
 type Vec2 = cgmath::Vector2<f32>;
 type Vec3 = cgmath::Vector3<f32>;
-
-
-
 type Mat4 = cgmath::Matrix4<f32>;
-
 use crate::app::AppData;
 use crate::image::{create_image, create_image_view, transition_image_layout};
 use crate::validations::QueueFamilyIndices;
 use crate::vertex::{Vertex};
 
-
-
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
-
-
-
 
 pub unsafe fn create_pipeline(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
     let vert = include_bytes!("../target/shaders/vert.spv");
@@ -81,12 +64,12 @@ pub unsafe fn create_pipeline(instance: &Instance, device: &Device, data: &mut A
     let attachment = vk::PipelineColorBlendAttachmentState::builder()
         .color_write_mask(vk::ColorComponentFlags::all())
         .blend_enable(false)
-        .src_color_blend_factor(vk::BlendFactor::ONE)  // Optional
-        .dst_color_blend_factor(vk::BlendFactor::ZERO) // Optional
-        .color_blend_op(vk::BlendOp::ADD)              // Optional
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)  // Optional
-        .dst_alpha_blend_factor(vk::BlendFactor::ZERO) // Optional
-        .alpha_blend_op(vk::BlendOp::ADD);             // Optional
+        .src_color_blend_factor(vk::BlendFactor::ONE)
+        .dst_color_blend_factor(vk::BlendFactor::ZERO)
+        .color_blend_op(vk::BlendOp::ADD)
+        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
+        .alpha_blend_op(vk::BlendOp::ADD);
 
     let attachments = &[attachment];
     let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
@@ -118,8 +101,8 @@ pub unsafe fn create_pipeline(instance: &Instance, device: &Device, data: &mut A
         .depth_write_enable(true)
         .depth_compare_op(vk::CompareOp::LESS)
         .depth_bounds_test_enable(false)
-        .min_depth_bounds(0.0) // Optional.
-        .max_depth_bounds(1.0) // Optional.
+        .min_depth_bounds(0.0)
+        .max_depth_bounds(1.0)
         .stencil_test_enable(false);
         
     let stages = &[vert_stage, frag_stage];
@@ -144,8 +127,8 @@ pub unsafe fn create_pipeline(instance: &Instance, device: &Device, data: &mut A
         .layout(data.pipeline_layout)
         .render_pass(vk::RenderPass::null())
         .dynamic_state(&dynamic_state_info)
-        .base_pipeline_handle(vk::Pipeline::null()) // Optional.
-        .base_pipeline_index(-1);                   // Optional.
+        .base_pipeline_handle(vk::Pipeline::null())
+        .base_pipeline_index(-1);
 
     data.pipeline = device.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)?.0[0];
 
@@ -442,7 +425,7 @@ pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData) -> Res
     data.descriptor_set = device.allocate_descriptor_sets(&info)?[0];
 
     data.ubo_index = -1;
-    data.sampler_index = -1;
+    // data.sampler_index = -1;
 
     Ok(())
 }

@@ -232,6 +232,9 @@ pub unsafe fn create_logical_device(entry: &Entry, instance: &Instance, data: &m
         .dynamic_rendering(true)
         .synchronization2(true);
 
+    // let mut bda_features = vk::PhysicalDeviceBufferDeviceAddressFeatures::builder()
+    //     .buffer_device_address(true);
+
     let mut features2 = vk::PhysicalDeviceFeatures2::builder()
         .features(
             vk::PhysicalDeviceFeatures::builder()
