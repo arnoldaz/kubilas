@@ -41,8 +41,8 @@ impl<T, Id> Registry<T, Id> where Id: From<usize> {
         self.items.len()
     }
 
-    pub fn into_items(&mut self) -> Vec<T> {
-        std::mem::take(&mut self.items)
+    pub fn into_items(self) -> Vec<T> {
+        self.items
     }
 }
 

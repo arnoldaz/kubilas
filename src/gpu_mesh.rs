@@ -1,7 +1,6 @@
-use vulkanalia::{Device, vk};
-use vulkanalia_vma::Allocator;
+use vulkanalia::{vk};
 
-use crate::{app::AppData, buffer::BufferAllocation, mesh::Mesh};
+use crate::{buffer::BufferAllocation, command::CommandData, mesh::Mesh, vulkan_context::{VulkanContext}};
 use anyhow::Result;
 
 
@@ -12,10 +11,15 @@ pub struct GpuMesh {
 }
 
 impl GpuMesh {
-    pub fn create_from_mesh(mesh: &Mesh, allocator: &Allocator, device: &Device, data: &AppData) -> Result<Self> {
-        let vertex_buffer = unsafe { BufferAllocation::allocate_buffer(allocator, &mesh.vertices, vk::BufferUsageFlags::VERTEX_BUFFER, device, data) }?;
-        let index_buffer = unsafe { BufferAllocation::allocate_buffer(allocator, &mesh.indices, vk::BufferUsageFlags::INDEX_BUFFER, device, data) }?;
+    pub fn create_from_mesh(mesh: &Mesh, vulkan_context: &VulkanContext, command_data: &CommandData) -> Result<Self> {
+        let vertex_buffer = unsafe { BufferAllocation::allocate_buffer(&mesh.vertices, vk::BufferUsageFlags::VERTEX_BUFFER, vulkan_context, command_data) }?;
+        let index_buffer = unsafe { BufferAllocation::allocate_buffer(&mesh.indices, vk::BufferUsageFlags::INDEX_BUFFER, vulkan_context, command_data) }?;
     
         Ok( Self { vertex_buffer, index_buffer, index_count: mesh.indices.len() as u32 } )
+    }
+    
+    pub unsafe fn destroy(self, vulkan_context: &VulkanContext) {
+        self.vertex_buffer.destroy(vulkan_context);
+        self.index_buffer.destroy(vulkan_context);
     }
 }

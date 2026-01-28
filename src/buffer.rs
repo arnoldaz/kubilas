@@ -1,6 +1,6 @@
-use vulkanalia::{Device, vk::{self, HasBuilder}};
-use vulkanalia_vma::{self as vma, Alloc, Allocator};
-use crate::{app::AppData, vulkan::copy_buffer};
+use vulkanalia::{vk::{self, HasBuilder}};
+use vulkanalia_vma::{self as vma, Alloc};
+use crate::{command::CommandData, vulkan::copy_buffer, vulkan_context::{VulkanContext}};
 use anyhow::Result;
 
 pub struct BufferAllocation {
@@ -13,13 +13,12 @@ impl BufferAllocation {
         Self { buffer, allocation }
     }
 
-    pub fn destroy(self, allocator: &vma::Allocator) {
-        unsafe {
-            allocator.destroy_buffer(self.buffer, self.allocation);
-        }
+    pub unsafe fn destroy(self, vulkan_context: &VulkanContext) {
+        vulkan_context.allocator.destroy_buffer(self.buffer, self.allocation);
     }
 
-    pub unsafe fn allocate_buffer<T: Copy, S: AsRef<[T]>>(allocator: &Allocator, data: S, usage_flag: vk::BufferUsageFlags, device: &Device, app_data: &AppData) -> Result<Self> {
+    pub unsafe fn allocate_buffer<T: Copy, S: AsRef<[T]>>(data: S, usage_flag: vk::BufferUsageFlags, vulkan_context: &VulkanContext, command_data: &CommandData) -> Result<Self> {
+        let allocator = &vulkan_context.allocator;
         let data_slice = data.as_ref();
         let size = (size_of::<T>() * data_slice.len()) as u64;
 
@@ -67,7 +66,7 @@ impl BufferAllocation {
             allocator.unmap_memory(staging_allocation);
 
             // Copy staging buffer to already created DEVICE_LOCAL GPU buffer
-            copy_buffer(device, app_data, staging_buffer, buffer, size)?;
+            copy_buffer(vulkan_context, command_data, staging_buffer, buffer, size)?;
 
             allocator.destroy_buffer(staging_buffer, staging_allocation);
 

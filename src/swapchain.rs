@@ -1,160 +1,113 @@
-
-
-
-
-use anyhow::Result;
-use vulkanalia::vk::{KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
+use anyhow::{Result};
+use vulkanalia::vk::{self, DeviceV1_0, Handle, HasBuilder, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
 use winit::window::Window;
+use crate::{vulkan::create_image_view, vulkan_context::VulkanContext};
 
-
-use vulkanalia::prelude::v1_0::*;
-
-type Vec2 = cgmath::Vector2<f32>;
-type Vec3 = cgmath::Vector3<f32>;
-
-
-use crate::app::AppData;
-use crate::image::create_image_view;
-use crate::validations::QueueFamilyIndices;
-
-#[derive(Clone, Debug)]
-pub struct SwapchainSupport {
-    pub capabilities: vk::SurfaceCapabilitiesKHR,
-    pub formats: Vec<vk::SurfaceFormatKHR>,
-    pub present_modes: Vec<vk::PresentModeKHR>,
+pub struct SwapchainData {
+    pub swapchain: vk::SwapchainKHR,
+    pub swapchain_images: Vec<vk::Image>,
+    pub swapchain_format: vk::Format,
+    pub swapchain_extent: vk::Extent2D,
+    pub swapchain_image_views: Vec<vk::ImageView>,
 }
 
-impl SwapchainSupport {
-    pub unsafe fn get(instance: &Instance, data: &AppData, physical_device: vk::PhysicalDevice) -> Result<Self> {
-        Ok(Self {
-            capabilities: instance.get_physical_device_surface_capabilities_khr(physical_device, data.surface)?,
-            formats: instance.get_physical_device_surface_formats_khr(physical_device, data.surface)?,
-            present_modes: instance.get_physical_device_surface_present_modes_khr(physical_device, data.surface)?,
-        })
-    }  
-}
-
-
-fn get_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
-    formats
-        .iter()
-        .cloned()
-        .find(|f| {
-            f.format == vk::Format::B8G8R8A8_SRGB && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
-        })
-        .unwrap_or_else(|| formats[0])
-}
-
-fn get_swapchain_present_mode(present_modes: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
-    present_modes
-        .iter()
-        .cloned()
-        .find(|m| *m == vk::PresentModeKHR::MAILBOX)
-        .unwrap_or(vk::PresentModeKHR::FIFO)
-}
-
-fn get_swapchain_extent(window: &Window, capabilities: vk::SurfaceCapabilitiesKHR) -> vk::Extent2D {
-    if capabilities.current_extent.width != u32::MAX {
-        capabilities.current_extent
-    } else {
-        vk::Extent2D::builder()
-            .width(window.inner_size().width.clamp(
-                capabilities.min_image_extent.width,
-                capabilities.max_image_extent.width,
-            ))
-            .height(window.inner_size().height.clamp(
-                capabilities.min_image_extent.height,
-                capabilities.max_image_extent.height,
-            ))
-            .build()
-    }
-}
-
-pub unsafe fn create_swapchain(window: &Window, instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
-    let support = SwapchainSupport::get(instance, data, data.physical_device)?;
-
-    let surface_format = get_swapchain_surface_format(&support.formats);
-    let present_mode = get_swapchain_present_mode(&support.present_modes);
-    let extent = get_swapchain_extent(window, support.capabilities);
-
-    let mut image_count = support.capabilities.min_image_count + 1;
-    if support.capabilities.max_image_count != 0
-        && image_count > support.capabilities.max_image_count
-    {
-        image_count = support.capabilities.max_image_count;
+impl SwapchainData {
+    pub unsafe fn new(window: &Window, vulkan_context: &VulkanContext) -> Result<Self> {
+        let (swapchain, swapchain_images, swapchain_format, swapchain_extent) = Self::create_swapchain(window, vulkan_context)?;
+        let swapchain_image_views = Self::create_swapchain_image_views(vulkan_context, &swapchain_images, swapchain_format)?;
+        
+        Ok(Self { swapchain, swapchain_images, swapchain_format, swapchain_extent, swapchain_image_views })
     }
 
-    let mut queue_family_indices = vec![];
-    let image_sharing_mode = if indices.graphics != indices.present {
-        queue_family_indices.push(indices.graphics);
-        queue_family_indices.push(indices.present);
-        vk::SharingMode::CONCURRENT
-    } else {
-        vk::SharingMode::EXCLUSIVE
-    };
+    pub unsafe fn destroy(self, vulkan_context: &VulkanContext) {
+        self.swapchain_image_views
+            .iter()
+            .for_each(|v| vulkan_context.device.destroy_image_view(*v, None));
 
-    let info = vk::SwapchainCreateInfoKHR::builder()
-        .surface(data.surface)
-        .min_image_count(image_count)
-        .image_format(surface_format.format)
-        .image_color_space(surface_format.color_space)
-        .image_extent(extent)
-        .image_array_layers(1)
-        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
-        .image_sharing_mode(image_sharing_mode)
-        .queue_family_indices(&queue_family_indices)
-        .pre_transform(support.capabilities.current_transform)
-        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-        .present_mode(present_mode)
-        .clipped(true)
-        .old_swapchain(vk::SwapchainKHR::null());
+        vulkan_context.device.destroy_swapchain_khr(self.swapchain, None);
+    }
 
-    data.swapchain = device.create_swapchain_khr(&info, None)?;
-    data.swapchain_images = device.get_swapchain_images_khr(data.swapchain)?;
-    data.swapchain_format = surface_format.format;
-    data.swapchain_extent = extent;
+    unsafe fn create_swapchain(window: &Window, vulkan_context: &VulkanContext) -> Result<(vk::SwapchainKHR, Vec<vk::Image>, vk::Format, vk::Extent2D)> {
+        let (graphics, present) = vulkan_context.queue_family_indices()?;
+        let capabilities = vulkan_context.instance.get_physical_device_surface_capabilities_khr(vulkan_context.physical_device, vulkan_context.surface)?;
+        let formats = vulkan_context.instance.get_physical_device_surface_formats_khr(vulkan_context.physical_device, vulkan_context.surface)?;
+        let present_modes = vulkan_context.instance.get_physical_device_surface_present_modes_khr(vulkan_context.physical_device, vulkan_context.surface)?;
 
-    Ok(())
-}
+        let surface_format = Self::get_swapchain_surface_format(&formats);
+        let present_mode = Self::get_swapchain_present_mode(&present_modes);
+        let extent = Self::get_swapchain_extent(window, capabilities);
 
-pub unsafe fn create_swapchain_image_views(device: &Device, data: &mut AppData) -> Result<()> {
-    data.swapchain_image_views = data
-        .swapchain_images
-        .iter()
-        .map(|i| create_image_view(device, *i, data.swapchain_format, vk::ImageAspectFlags::COLOR))
-        .collect::<Result<Vec<_>, _>>()?;
+        let mut image_count = capabilities.min_image_count + 1;
+        if capabilities.max_image_count != 0 && image_count > capabilities.max_image_count {
+            image_count = capabilities.max_image_count;
+        }
 
-    Ok(())
+        let mut queue_family_indices = vec![];
+        let image_sharing_mode = if graphics != present {
+            queue_family_indices.push(graphics);
+            queue_family_indices.push(present);
+            vk::SharingMode::CONCURRENT
+        } else {
+            vk::SharingMode::EXCLUSIVE
+        };
 
-    // data.swapchain_image_views = data
-    //     .swapchain_images
-    //     .iter()
-    //     .map(|i| {
-    //         let components = vk::ComponentMapping::builder()
-    //             .r(vk::ComponentSwizzle::IDENTITY)
-    //             .g(vk::ComponentSwizzle::IDENTITY)
-    //             .b(vk::ComponentSwizzle::IDENTITY)
-    //             .a(vk::ComponentSwizzle::IDENTITY);
-        
-    //         let subresource_range = vk::ImageSubresourceRange::builder()
-    //             .aspect_mask(vk::ImageAspectFlags::COLOR)
-    //             .base_mip_level(0)
-    //             .level_count(1)
-    //             .base_array_layer(0)
-    //             .layer_count(1);
-        
-    //         let info = vk::ImageViewCreateInfo::builder()
-    //             .image(*i)
-    //             .view_type(vk::ImageViewType::_2D)
-    //             .format(data.swapchain_format)
-    //             .components(components)
-    //             .subresource_range(subresource_range);
+        let info = vk::SwapchainCreateInfoKHR::builder()
+            .surface(vulkan_context.surface)
+            .min_image_count(image_count)
+            .image_format(surface_format.format)
+            .image_color_space(surface_format.color_space)
+            .image_extent(extent)
+            .image_array_layers(1)
+            .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_sharing_mode(image_sharing_mode)
+            .queue_family_indices(&queue_family_indices)
+            .pre_transform(capabilities.current_transform)
+            .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(present_mode)
+            .clipped(true)
+            .old_swapchain(vk::SwapchainKHR::null());
 
-    //         device.create_image_view(&info, None)
-    //     })
-    //     .collect::<Result<Vec<_>, _>>()?;
+        let swapchain = vulkan_context.device.create_swapchain_khr(&info, None)?;
+        let swapchain_images = vulkan_context.device.get_swapchain_images_khr(swapchain)?;
+        let swapchain_format = surface_format.format;
+        let swapchain_extent = extent;
 
+        Ok((swapchain, swapchain_images, swapchain_format, swapchain_extent))
+    }
 
-    // Ok(())
+    unsafe fn create_swapchain_image_views(vulkan_context: &VulkanContext, swapchain_images: &Vec<vk::Image>, swapchain_format: vk::Format) -> Result<Vec<vk::ImageView>> {
+        swapchain_images
+            .iter()
+            .map(|i| create_image_view(vulkan_context, *i, swapchain_format, vk::ImageAspectFlags::COLOR))
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    fn get_swapchain_surface_format(formats: &[vk::SurfaceFormatKHR]) -> vk::SurfaceFormatKHR {
+        formats
+            .iter()
+            .cloned()
+            .find(|f| {
+                f.format == vk::Format::B8G8R8A8_SRGB && f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR
+            })
+            .unwrap_or_else(|| formats[0])
+    }
+
+    fn get_swapchain_present_mode(present_modes: &[vk::PresentModeKHR]) -> vk::PresentModeKHR {
+        present_modes
+            .iter()
+            .cloned()
+            .find(|m| *m == vk::PresentModeKHR::MAILBOX)
+            .unwrap_or(vk::PresentModeKHR::FIFO)
+    }
+
+    fn get_swapchain_extent(window: &Window, capabilities: vk::SurfaceCapabilitiesKHR) -> vk::Extent2D {
+        if capabilities.current_extent.width != u32::MAX {
+            capabilities.current_extent
+        } else {
+            vk::Extent2D::builder()
+                .width(window.inner_size().width.clamp(capabilities.min_image_extent.width, capabilities.max_image_extent.width))
+                .height(window.inner_size().height.clamp(capabilities.min_image_extent.height, capabilities.max_image_extent.height))
+                .build()
+        }
+    }
 }

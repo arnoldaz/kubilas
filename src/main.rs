@@ -1,16 +1,8 @@
-#![allow(
-    dead_code,
-    unused_variables,
-    clippy::too_many_arguments,
-    clippy::unnecessary_wraps,
-)]
-
 mod vertex;
 mod app;
 mod vulkan;
 mod swapchain;
-mod image;
-mod validations;
+mod vulkan_context;
 mod camera;
 mod buffer;
 mod texture;
@@ -19,6 +11,10 @@ mod scene;
 mod registry;
 mod bitmap;
 mod gpu_mesh;
+mod pipeline;
+mod command;
+mod depth;
+mod frame_data;
 
 use std::time::{Instant};
 
@@ -33,12 +29,7 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowAttributes, WindowId};
 
-type Vec2 = cgmath::Vector2<f32>;
-type Vec3 = cgmath::Vector3<f32>;
 
-// NEXT: https://kylemayes.github.io/vulkanalia/vertex/staging_buffer.html
-
-// #[derive(Debug)]
 struct WindowHandler {
     window: Option<Window>,
     app: Option<App>,
@@ -88,16 +79,20 @@ impl WindowHandler {
                 WindowEvent::CloseRequested => {
                     event_loop.exit();
                     unsafe {
-                        app.device.device_wait_idle().unwrap();
-                        app.destroy();
+                        if let Some(app) = self.app.take() {
+                            app.vulkan_context.device.device_wait_idle().unwrap();
+                            app.destroy();
+                        }
                     }
                 },
                 WindowEvent::KeyboardInput { event: KeyEvent { physical_key, state, .. }, .. } => match physical_key {
                     PhysicalKey::Code(KeyCode::Escape) => {
                         event_loop.exit();
                         unsafe {
-                            app.device.device_wait_idle().unwrap();
-                            app.destroy();
+                            if let Some(app) = self.app.take() {
+                                app.vulkan_context.device.device_wait_idle().unwrap();
+                                app.destroy();
+                            }
                         }
                     },
                     PhysicalKey::Code(KeyCode::Enter) => {
@@ -211,7 +206,9 @@ impl ApplicationHandler for WindowHandler {
 }
 
 fn main() -> Result<()> {
-    pretty_env_logger::init();
+    pretty_env_logger::formatted_builder()
+        .filter_level(log::LevelFilter::Error)
+        .init();
 
     let event_loop = EventLoop::new()?;
     let mut window_handler = WindowHandler { window: None, app: None, minimized: false, last_frame_time: Instant::now(), frames: 0, camera_mode: false, last_fps_time: Instant::now() };

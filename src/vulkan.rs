@@ -1,315 +1,78 @@
 use anyhow::{anyhow, Result};
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::bytecode::Bytecode;
 use std::mem::size_of;
-type Vec2 = cgmath::Vector2<f32>;
-type Vec3 = cgmath::Vector3<f32>;
 type Mat4 = cgmath::Matrix4<f32>;
-use crate::app::AppData;
-use crate::image::{create_image, create_image_view, transition_image_layout};
-use crate::validations::QueueFamilyIndices;
-use crate::vertex::{Vertex};
+use crate::command::CommandData;
+use crate::pipeline::{PipelineData};
+use crate::swapchain::SwapchainData;
+use crate::vulkan_context::{VulkanContext};
 
 pub const MAX_FRAMES_IN_FLIGHT: usize = 2;
 
-pub unsafe fn create_pipeline(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
-    let vert = include_bytes!("../target/shaders/vert.spv");
-    let frag = include_bytes!("../target/shaders/frag.spv");
-
-    let vert_shader_module = create_shader_module(device, &vert[..])?;
-    let frag_shader_module = create_shader_module(device, &frag[..])?;
-
-    let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
-        .stage(vk::ShaderStageFlags::VERTEX)
-        .module(vert_shader_module)
-        .name(b"main\0");
-
-    let frag_stage = vk::PipelineShaderStageCreateInfo::builder()
-        .stage(vk::ShaderStageFlags::FRAGMENT)
-        .module(frag_shader_module)
-        .name(b"main\0");
-
-
-    // let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder();
-    let binding_descriptions = &[Vertex::binding_description()];
-    let attribute_descriptions = Vertex::attribute_descriptions();
-    let vertex_input_state = vk::PipelineVertexInputStateCreateInfo::builder()
-        .vertex_binding_descriptions(binding_descriptions)
-        .vertex_attribute_descriptions(&attribute_descriptions);
-
-    let input_assembly_state = vk::PipelineInputAssemblyStateCreateInfo::builder()
-        .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-        .primitive_restart_enable(false);
-
-    let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
-        .viewport_count(1)
-        .scissor_count(1);
-
-    let dynamic_state_info = vk::PipelineDynamicStateCreateInfo::builder()
-        .dynamic_states(&[vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR]);
-
-    let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
-        .depth_clamp_enable(false)
-        .rasterizer_discard_enable(false)
-        .polygon_mode(vk::PolygonMode::FILL)
-        .line_width(1.0)
-        .cull_mode(vk::CullModeFlags::BACK)
-        .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
-        .depth_bias_enable(false);
-
-    let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
-        .sample_shading_enable(false)
-        .rasterization_samples(vk::SampleCountFlags::_1);
-
-    let attachment = vk::PipelineColorBlendAttachmentState::builder()
-        .color_write_mask(vk::ColorComponentFlags::all())
-        .blend_enable(false)
-        .src_color_blend_factor(vk::BlendFactor::ONE)
-        .dst_color_blend_factor(vk::BlendFactor::ZERO)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD);
-
-    let attachments = &[attachment];
-    let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
-        .logic_op_enable(false)
-        .logic_op(vk::LogicOp::COPY)
-        .attachments(attachments)
-        .blend_constants([0.0, 0.0, 0.0, 0.0]);
-
-    let vert_push_constant_range = vk::PushConstantRange::builder()
-        .stage_flags(vk::ShaderStageFlags::VERTEX)
-        .offset(0)
-        .size(64 /* 16 × 4 byte floats */);
-
-    let frag_range = vk::PushConstantRange::builder()
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-        .offset(64) // offset after vertex constants
-        .size(4);
-
-    let set_layouts = &[data.descriptor_set_layout];
-    let push_constant_ranges = &[vert_push_constant_range, frag_range];
-    let layout_info = vk::PipelineLayoutCreateInfo::builder()
-        .set_layouts(set_layouts)
-        .push_constant_ranges(push_constant_ranges);
-
-    data.pipeline_layout = device.create_pipeline_layout(&layout_info, None)?;
-
-    let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::builder()
-        .depth_test_enable(true)
-        .depth_write_enable(true)
-        .depth_compare_op(vk::CompareOp::LESS)
-        .depth_bounds_test_enable(false)
-        .min_depth_bounds(0.0)
-        .max_depth_bounds(1.0)
-        .stencil_test_enable(false);
-        
-    let stages = &[vert_stage, frag_stage];
-
-    
-    let color_formats = &[data.swapchain_format];
-    let mut pipeline_rendering_info = vk::PipelineRenderingCreateInfo::builder()
-        .color_attachment_formats(color_formats)
-        .depth_attachment_format(get_depth_format(instance, data)?)
-        .stencil_attachment_format(get_depth_format(instance, data)?);
-
-    let info = vk::GraphicsPipelineCreateInfo::builder()
-        .push_next(&mut pipeline_rendering_info)
-        .stages(stages)
-        .vertex_input_state(&vertex_input_state)
-        .input_assembly_state(&input_assembly_state)
-        .viewport_state(&viewport_state)
-        .rasterization_state(&rasterization_state)
-        .multisample_state(&multisample_state)
-        .depth_stencil_state(&depth_stencil_state)
-        .color_blend_state(&color_blend_state)
-        .layout(data.pipeline_layout)
-        .render_pass(vk::RenderPass::null())
-        .dynamic_state(&dynamic_state_info)
-        .base_pipeline_handle(vk::Pipeline::null())
-        .base_pipeline_index(-1);
-
-    data.pipeline = device.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)?.0[0];
-
-    device.destroy_shader_module(vert_shader_module, None);
-    device.destroy_shader_module(frag_shader_module, None);
-
-    Ok(())
-}
-
-pub unsafe fn create_shader_module(device: &Device, bytecode: &[u8]) -> Result<vk::ShaderModule> {
-    let bytecode = Bytecode::new(bytecode).unwrap();
-
-    let info = vk::ShaderModuleCreateInfo::builder()
-        .code_size(bytecode.code_size())
-        .code(bytecode.code());
-
-    Ok(device.create_shader_module(&info, None)?)
-}
-
-
-pub unsafe fn create_command_pool(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
-    let indices = QueueFamilyIndices::get(instance, data, data.physical_device)?;
-
-    let info = vk::CommandPoolCreateInfo::builder()
-        .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
-        .queue_family_index(indices.graphics);
-
-    data.command_pool = device.create_command_pool(&info, None)?;
-
-    Ok(())
-}
-
-pub unsafe fn create_command_buffers(device: &Device, data: &mut AppData) -> Result<()> {
-    let allocate_info = vk::CommandBufferAllocateInfo::builder()
-        .command_pool(data.command_pool)
-        .level(vk::CommandBufferLevel::PRIMARY)
-        .command_buffer_count(data.swapchain_image_views.len() as u32);
-
-    data.command_buffers = device.allocate_command_buffers(&allocate_info)?;
-
-    Ok(())
-}
-
-pub unsafe fn create_sync_objects(device: &Device, data: &mut AppData) -> Result<()> {
+// pub image_available_semaphores: Vec<vk::Semaphore>,
+// pub render_finished_semaphores: Vec<vk::Semaphore>,
+// pub in_flight_fences: Vec<vk::Fence>,
+// pub images_in_flight: Vec<vk::Fence>,
+pub unsafe fn create_sync_objects(vulkan_context: &VulkanContext, swapchain_data: &SwapchainData) -> Result<(Vec<vk::Semaphore>, Vec<vk::Semaphore>, Vec<vk::Fence>, Vec<vk::Fence>)> {
     let semaphore_info = vk::SemaphoreCreateInfo::builder();
     let fence_info = vk::FenceCreateInfo::builder()
         .flags(vk::FenceCreateFlags::SIGNALED);
 
-    // data.image_available_semaphore = device.create_semaphore(&semaphore_info, None)?;
-    // data.render_finished_semaphore = device.create_semaphore(&semaphore_info, None)?;
-
+    let mut image_available_semaphores = Vec::new();
+    let mut in_flight_fences = Vec::new();
     for _ in 0..MAX_FRAMES_IN_FLIGHT {
-        data.image_available_semaphores.push(device.create_semaphore(&semaphore_info, None)?);
-        data.in_flight_fences.push(device.create_fence(&fence_info, None)?);
+        image_available_semaphores.push(vulkan_context.device.create_semaphore(&semaphore_info, None)?);
+        in_flight_fences.push(vulkan_context.device.create_fence(&fence_info, None)?);
     }
     
-    let image_count = data.swapchain_images.len();
-    println!("{} iamge count", image_count);
+    let image_count = swapchain_data.swapchain_images.len();
+    
+    let mut render_finished_semaphores = Vec::new();
     for _ in 0..image_count {
-        data.render_finished_semaphores.push(device.create_semaphore(&semaphore_info, None)?);
+        render_finished_semaphores.push(vulkan_context.device.create_semaphore(&semaphore_info, None)?);
     }
 
-    data.images_in_flight = data.swapchain_images
+    let images_in_flight: Vec<vk::Fence> = swapchain_data.swapchain_images
         .iter()
         .map(|_| vk::Fence::null())
         .collect();
 
-    Ok(())
+    Ok((image_available_semaphores, render_finished_semaphores, in_flight_fences, images_in_flight))
 }
 
 
 
-pub unsafe fn create_buffer(
-    instance: &Instance,
-    device: &Device,
-    data: &AppData,
-    size: vk::DeviceSize,
-    usage: vk::BufferUsageFlags,
-    properties: vk::MemoryPropertyFlags,
-) -> Result<(vk::Buffer, vk::DeviceMemory)> {
+pub unsafe fn create_buffer(vulkan_context: &VulkanContext, size: vk::DeviceSize, usage: vk::BufferUsageFlags, properties: vk::MemoryPropertyFlags) -> Result<(vk::Buffer, vk::DeviceMemory)> {
     let buffer_info = vk::BufferCreateInfo::builder()
         .size(size)
         .usage(usage)
         .sharing_mode(vk::SharingMode::EXCLUSIVE);
 
-    let buffer = device.create_buffer(&buffer_info, None)?;
+    let buffer = vulkan_context.device.create_buffer(&buffer_info, None)?;
 
-    let requirements = device.get_buffer_memory_requirements(buffer);
+    let requirements = vulkan_context.device.get_buffer_memory_requirements(buffer);
 
     let memory_info = vk::MemoryAllocateInfo::builder()
         .allocation_size(requirements.size)
-        .memory_type_index(get_memory_type_index(
-            instance,
-            data,
-            properties,
-            requirements,
-        )?);
+        .memory_type_index(get_memory_type_index(vulkan_context, properties, requirements)?);
 
-    let buffer_memory = device.allocate_memory(&memory_info, None)?;
+    let buffer_memory = vulkan_context.device.allocate_memory(&memory_info, None)?;
 
-    device.bind_buffer_memory(buffer, buffer_memory, 0)?;
+    vulkan_context.device.bind_buffer_memory(buffer, buffer_memory, 0)?;
 
     Ok((buffer, buffer_memory))
 }
 
-pub unsafe fn copy_buffer(
-    device: &Device,
-    data: &AppData,
-    source: vk::Buffer,
-    destination: vk::Buffer,
-    size: vk::DeviceSize,
-) -> Result<()> {
-    let command_buffer = begin_single_time_commands(device, data)?;
+pub unsafe fn copy_buffer(vulkan_context: &VulkanContext, command_data: &CommandData, source: vk::Buffer, destination: vk::Buffer, size: vk::DeviceSize) -> Result<()> {
+    let command_buffer = command_data.begin_single_time_commands(vulkan_context)?;
 
     let regions = vk::BufferCopy::builder().size(size);
-    device.cmd_copy_buffer(command_buffer, source, destination, &[regions]);
+    vulkan_context.device.cmd_copy_buffer(command_buffer, source, destination, &[regions]);
 
-    end_single_time_commands(device, data, command_buffer)?;
-
-    Ok(())
-}
-
-
-pub unsafe fn begin_single_time_commands(
-    device: &Device,
-    data: &AppData,
-) -> Result<vk::CommandBuffer> {
-    let info = vk::CommandBufferAllocateInfo::builder()
-        .level(vk::CommandBufferLevel::PRIMARY)
-        .command_pool(data.command_pool)
-        .command_buffer_count(1);
-
-    let command_buffer = device.allocate_command_buffers(&info)?[0];
-
-    let info = vk::CommandBufferBeginInfo::builder()
-        .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
-    device.begin_command_buffer(command_buffer, &info)?;
-
-    Ok(command_buffer)
-}
-
-pub unsafe fn end_single_time_commands(
-    device: &Device,
-    data: &AppData,
-    command_buffer: vk::CommandBuffer,
-) -> Result<()> {
-    device.end_command_buffer(command_buffer)?;
-
-    let command_buffers = &[command_buffer];
-    let info = vk::SubmitInfo::builder()
-        .command_buffers(command_buffers);
-
-    device.queue_submit(data.graphics_queue, &[info], vk::Fence::null())?;
-    device.queue_wait_idle(data.graphics_queue)?;
-
-    device.free_command_buffers(data.command_pool, &[command_buffer]);
+    command_data.end_single_time_commands(command_buffer, vulkan_context)?;
 
     Ok(())
 }
-
-
-
-pub unsafe fn get_memory_type_index(
-    instance: &Instance,
-    data: &AppData,
-    properties: vk::MemoryPropertyFlags,
-    requirements: vk::MemoryRequirements,
-) -> Result<u32> {
-    let memory = instance.get_physical_device_memory_properties(data.physical_device);
-
-    (0..memory.memory_type_count)
-        .find(|i| {
-            let suitable = (requirements.memory_type_bits & (1 << i)) != 0;
-            let memory_type = memory.memory_types[*i as usize];
-            suitable && memory_type.property_flags.contains(properties)
-        })
-        .ok_or_else(|| anyhow!("Failed to find suitable memory type."))
-    }
-
-
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -318,189 +81,226 @@ pub struct UniformBufferObject {
     pub proj: Mat4,
 }
 
-pub unsafe fn create_descriptor_set_layout(
-    device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
-    let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(0)
-        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-        .descriptor_count(65536)
-        .stage_flags(vk::ShaderStageFlags::VERTEX);
-
-    let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
-        .binding(1)
-        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(65536)
-        .stage_flags(vk::ShaderStageFlags::FRAGMENT);
-
-    let bindings = &[ubo_binding, sampler_binding];
-
-    let binding_flags = &[
-        vk::DescriptorBindingFlags::PARTIALLY_BOUND | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
-        vk::DescriptorBindingFlags::PARTIALLY_BOUND | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND
-    ];
-    let mut binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo::builder()
-        .binding_flags(binding_flags);
-
-    let info = vk::DescriptorSetLayoutCreateInfo::builder()
-        .bindings(bindings)
-        .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
-        .push_next(&mut binding_flags_info);
-    
-    data.descriptor_set_layout = device.create_descriptor_set_layout(&info, None)?;
-
-    Ok(())
-}
-
-pub unsafe fn create_uniform_buffers(
-    instance: &Instance,
-    device: &Device,
-    data: &mut AppData,
-) -> Result<()> {
-    data.uniform_buffers.clear();
-    data.uniform_buffers_memory.clear();
+pub unsafe fn create_uniform_buffers(vulkan_context: &VulkanContext, pipeline_data: &PipelineData) -> Result<(Vec<vk::Buffer>, Vec<vk::DeviceMemory>)> {
+    let mut uniform_buffers = Vec::<vk::Buffer>::new();
+    let mut uniform_buffers_memory = Vec::<vk::DeviceMemory>::new();
 
     for i in 0..MAX_FRAMES_IN_FLIGHT {
-        data.ubo_index += 1;
 
         let (uniform_buffer, uniform_buffer_memory) = create_buffer(
-            instance,
-            device,
-            data,
+            vulkan_context,
             size_of::<UniformBufferObject>() as u64,
             vk::BufferUsageFlags::UNIFORM_BUFFER,
             vk::MemoryPropertyFlags::HOST_COHERENT | vk::MemoryPropertyFlags::HOST_VISIBLE,
         )?;
 
-        data.uniform_buffers.push(uniform_buffer);
-        data.uniform_buffers_memory.push(uniform_buffer_memory);
+        uniform_buffers.push(uniform_buffer);
+        uniform_buffers_memory.push(uniform_buffer_memory);
 
         let info = vk::DescriptorBufferInfo::builder()
-            .buffer(data.uniform_buffers[i])
+            .buffer(uniform_buffers[i])
             .offset(0)
             .range(size_of::<UniformBufferObject>() as u64);
 
         let buffer_info = &[info];
         let ubo_write = vk::WriteDescriptorSet::builder()
-            .dst_set(data.descriptor_set)
+            .dst_set(pipeline_data.descriptor_set)
             .dst_binding(0)
-            .dst_array_element(data.ubo_index as u32)
+            .dst_array_element(i as u32)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
             .buffer_info(buffer_info);
 
-        device.update_descriptor_sets(&[ubo_write], &[] as &[vk::CopyDescriptorSet]);
+        vulkan_context.device.update_descriptor_sets(&[ubo_write], &[] as &[vk::CopyDescriptorSet]);
     }
 
-    Ok(())
+    Ok((uniform_buffers, uniform_buffers_memory))
 }
 
+pub unsafe fn create_image_view(vulkan_context: &VulkanContext, image: vk::Image, format: vk::Format, aspects: vk::ImageAspectFlags) -> Result<vk::ImageView> {
+    let subresource_range = vk::ImageSubresourceRange::builder()
+        .aspect_mask(aspects)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(1);
 
-pub unsafe fn create_descriptor_pool(device: &Device, data: &mut AppData) -> Result<()> {
-    let ubo_size = vk::DescriptorPoolSize::builder()
-        .type_(vk::DescriptorType::UNIFORM_BUFFER)
-        .descriptor_count(65536);
-    
-    let sampler_size = vk::DescriptorPoolSize::builder()
-        .type_(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-        .descriptor_count(65536);
+    let info = vk::ImageViewCreateInfo::builder()
+        .image(image)
+        .view_type(vk::ImageViewType::_2D)
+        .format(format)
+        .subresource_range(subresource_range);
 
-    let pool_sizes = &[ubo_size, sampler_size];
-    let info = vk::DescriptorPoolCreateInfo::builder()
-        .pool_sizes(pool_sizes)
-        .max_sets(1)
-        .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND);
-
-    data.descriptor_pool = device.create_descriptor_pool(&info, None)?;
-
-    Ok(())
+    Ok(vulkan_context.device.create_image_view(&info, None)?)
 }
 
-pub unsafe fn create_descriptor_sets(device: &Device, data: &mut AppData) -> Result<()> {
-    let layouts = &[data.descriptor_set_layout];
-    let info = vk::DescriptorSetAllocateInfo::builder()
-        .descriptor_pool(data.descriptor_pool)
-        .set_layouts(layouts);
-
-    data.descriptor_set = device.allocate_descriptor_sets(&info)?[0];
-
-    data.ubo_index = -1;
-    // data.sampler_index = -1;
-
-    Ok(())
-}
-
-pub unsafe fn create_depth_objects(instance: &Instance, device: &Device, data: &mut AppData) -> Result<()> {
-    let format = get_depth_format(instance, data)?;
-    
-    let (depth_image, depth_image_memory) = create_image(
-        instance,
-        device,
-        data,
-        data.swapchain_extent.width,
-        data.swapchain_extent.height,
-        format,
-        vk::ImageTiling::OPTIMAL,
-        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
-        vk::MemoryPropertyFlags::DEVICE_LOCAL,
-    )?;
-
-    data.depth_image = depth_image;
-    data.depth_image_memory = depth_image_memory;
-
-    // Image View
-
-    data.depth_image_view = create_image_view(device, data.depth_image, format, vk::ImageAspectFlags::DEPTH)?;
-
-    transition_image_layout(
-        device,
-        data,
-        data.depth_image,
-        format,
-        vk::ImageLayout::UNDEFINED,
-        vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-    )?;
-
-    Ok(())
-}
-
-unsafe fn get_supported_format(
-    instance: &Instance,
-    data: &AppData,
-    candidates: &[vk::Format],
-    tiling: vk::ImageTiling,
-    features: vk::FormatFeatureFlags,
-) -> Result<vk::Format> {
-    candidates
-        .iter()
-        .cloned()
-        .find(|f| {
-            let properties = instance.get_physical_device_format_properties(
-                data.physical_device,
-                *f,
-            );
-
-            match tiling {
-                vk::ImageTiling::LINEAR => properties.linear_tiling_features.contains(features),
-                vk::ImageTiling::OPTIMAL => properties.optimal_tiling_features.contains(features),
-                _ => false,
-            }
+pub unsafe fn create_image(vulkan_context: &VulkanContext, width: u32, height: u32, format: vk::Format, tiling: vk::ImageTiling, usage: vk::ImageUsageFlags, properties: vk::MemoryPropertyFlags) -> Result<(vk::Image, vk::DeviceMemory)> {
+    let info = vk::ImageCreateInfo::builder()
+        .image_type(vk::ImageType::_2D)
+        .extent(vk::Extent3D {
+            width,
+            height,
+            depth: 1,
         })
-        .ok_or_else(|| anyhow!("Failed to find supported format!"))
+        .mip_levels(1)
+        .array_layers(1)
+        .format(format)
+        .tiling(tiling)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .usage(usage)
+        .samples(vk::SampleCountFlags::_1)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+    let image = vulkan_context.device.create_image(&info, None)?;
+
+    let requirements = vulkan_context.device.get_image_memory_requirements(image);
+    let info = vk::MemoryAllocateInfo::builder()
+        .allocation_size(requirements.size)
+        .memory_type_index(get_memory_type_index(vulkan_context, properties, requirements)?);
+
+    let image_memory = vulkan_context.device.allocate_memory(&info, None)?;
+
+    vulkan_context.device.bind_image_memory(image, image_memory, 0)?;
+
+    Ok((image, image_memory))
 }
 
-unsafe fn get_depth_format(instance: &Instance, data: &AppData) -> Result<vk::Format> {
-    let candidates = &[
-        vk::Format::D24_UNORM_S8_UINT,
-        vk::Format::D32_SFLOAT_S8_UINT,
-        vk::Format::D32_SFLOAT,
-    ];
+pub unsafe fn get_memory_type_index(vulkan_context: &VulkanContext, properties: vk::MemoryPropertyFlags, requirements: vk::MemoryRequirements) -> Result<u32> {
+    let memory = vulkan_context.instance.get_physical_device_memory_properties(vulkan_context.physical_device);
 
-    get_supported_format(
-        instance,
-        data,
-        candidates,
-        vk::ImageTiling::OPTIMAL,
-        vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT,
-    )
+    (0..memory.memory_type_count)
+        .find(|i| {
+            let suitable = (requirements.memory_type_bits & (1 << i)) != 0;
+            let memory_type = memory.memory_types[*i as usize];
+            suitable && memory_type.property_flags.contains(properties)
+        })
+        .ok_or_else(|| anyhow!("Failed to find suitable memory type."))
 }
+
+pub unsafe fn transition_image_layout(vulkan_context: &VulkanContext, command_data: &CommandData, image: vk::Image, format: vk::Format, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) -> Result<()> {
+    let (
+        src_access_mask,
+        dst_access_mask,
+        src_stage_mask,
+        dst_stage_mask,
+    ) = match (old_layout, new_layout) {
+        (vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
+            vk::AccessFlags::empty(),
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::TRANSFER,
+        ),
+        (vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL) => (
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::AccessFlags::SHADER_READ,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+        ),
+        (vk::ImageLayout::UNDEFINED, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL) => (
+            vk::AccessFlags::empty(),
+            vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+        ),
+        _ => return Err(anyhow!("Unsupported image layout transition!")),
+    };
+
+
+    let command_buffer = command_data.begin_single_time_commands(vulkan_context)?;
+
+    let aspect_mask = if new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
+        match format {
+            vk::Format::D32_SFLOAT_S8_UINT | vk::Format::D24_UNORM_S8_UINT =>
+                vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL,
+            _ => vk::ImageAspectFlags::DEPTH
+        }
+    } else {
+        vk::ImageAspectFlags::COLOR
+    };
+
+    let subresource = vk::ImageSubresourceRange::builder()
+        .aspect_mask(aspect_mask)
+        .base_mip_level(0)
+        .level_count(1)
+        .base_array_layer(0)
+        .layer_count(1);
+
+    let barrier = vk::ImageMemoryBarrier::builder()
+        .old_layout(old_layout)
+        .new_layout(new_layout)
+        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+        .image(image)
+        .subresource_range(subresource)
+        .src_access_mask(src_access_mask)
+        .dst_access_mask(dst_access_mask);
+    
+    vulkan_context.device.cmd_pipeline_barrier(
+        command_buffer,
+        src_stage_mask,
+        dst_stage_mask,
+        vk::DependencyFlags::empty(),
+        &[] as &[vk::MemoryBarrier],
+        &[] as &[vk::BufferMemoryBarrier],
+        &[barrier],
+    );
+    
+
+    command_data.end_single_time_commands(command_buffer, vulkan_context)?;
+
+    Ok(())
+}
+
+pub unsafe fn copy_buffer_to_image(vulkan_context: &VulkanContext, command_data: &CommandData, buffer: vk::Buffer, image: vk::Image, width: u32, height: u32) -> Result<()> {
+    let command_buffer = command_data.begin_single_time_commands(vulkan_context)?;
+
+    let subresource = vk::ImageSubresourceLayers::builder()
+        .aspect_mask(vk::ImageAspectFlags::COLOR)
+        .mip_level(0)
+        .base_array_layer(0)
+        .layer_count(1);
+
+    let region = vk::BufferImageCopy::builder()
+        .buffer_offset(0)
+        .buffer_row_length(0)
+        .buffer_image_height(0)
+        .image_subresource(subresource)
+        .image_offset(vk::Offset3D { x: 0, y: 0, z: 0 })
+        .image_extent(vk::Extent3D { width, height, depth: 1 });
+    
+    vulkan_context.device.cmd_copy_buffer_to_image(
+        command_buffer,
+        buffer,
+        image,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        &[region],
+    );
+    
+    command_data.end_single_time_commands(command_buffer, vulkan_context)?;
+
+    Ok(())
+}
+
+pub unsafe fn create_texture_sampler(vulkan_context: &VulkanContext) -> Result<vk::Sampler> {
+    let info = vk::SamplerCreateInfo::builder()
+        .mag_filter(vk::Filter::LINEAR)
+        .min_filter(vk::Filter::LINEAR)
+        .address_mode_u(vk::SamplerAddressMode::REPEAT)
+        .address_mode_v(vk::SamplerAddressMode::REPEAT)
+        .address_mode_w(vk::SamplerAddressMode::REPEAT)
+        .anisotropy_enable(true)
+        .max_anisotropy(16.0)
+        .border_color(vk::BorderColor::INT_OPAQUE_BLACK)
+        .unnormalized_coordinates(false)
+        .compare_enable(false)
+        .compare_op(vk::CompareOp::ALWAYS)
+        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+        .mip_lod_bias(0.0)
+        .min_lod(0.0)
+        .max_lod(0.0);
+        
+    let texture_sampler = vulkan_context.device.create_sampler(&info, None)?;
+
+    Ok(texture_sampler)
+}
+
+

@@ -1,42 +1,44 @@
 use anyhow::{anyhow, Result};
 use winit::window::Window;
 
-
-use vulkanalia::loader::{LibloadingLoader, LIBRARY};
-use vulkanalia::{window as vk_window};
 use vulkanalia::prelude::v1_0::*;
-use vulkanalia::vk::{DeviceV1_3, ExtDebugUtilsExtensionInstanceCommands, KhrSurfaceExtensionInstanceCommands, KhrSwapchainExtensionDeviceCommands};
+use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands};
 
 use std::mem::size_of;
-use cgmath::{Deg, Euler, Matrix4, Quaternion, Rad, Vector2, Vector3, Zero, point3};
-use std::time::Instant;
+use cgmath::{Deg, Euler, Rad, Vector3, point3};
 
 use crate::bitmap::Bitmap;
 use crate::camera::{Camera, CameraMovement, Projection};
+use crate::command::CommandData;
+use crate::depth::DepthResources;
+use crate::frame_data::{FrameData};
 use crate::gpu_mesh::GpuMesh;
-use crate::image::{create_texture_sampler};
 use crate::mesh::Mesh;
-use crate::registry::{MeshRegistry, Registry, TextureId, TextureRegistry};
+use crate::pipeline::PipelineData;
+use crate::registry::{MeshRegistry, TextureId, TextureRegistry};
 use crate::scene::{GpuEntity, Transform};
-use crate::swapchain::{create_swapchain, create_swapchain_image_views};
+use crate::swapchain::{SwapchainData};
 use crate::texture::{Texture};
-use crate::validations::{VALIDATION_ENABLED, create_instance, create_logical_device, pick_physical_device};
-use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_command_buffers, create_command_pool, create_depth_objects, create_descriptor_pool, create_descriptor_set_layout, create_descriptor_sets, create_pipeline, create_sync_objects, create_uniform_buffers};
+use crate::vulkan_context::VulkanContext;
+use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_texture_sampler};
 
 use std::ptr::copy_nonoverlapping as memcpy;
-use vulkanalia_vma::{self as vma};
 
 pub struct App {
-    pub entry: Entry,
-    pub instance: Instance,
-    pub data: AppData,
-    pub device: Device,
-    pub frame: usize,
-    pub resized: bool,
-    pub start: Instant,
+    pub vulkan_context: VulkanContext,
+    pub swapchain_data: SwapchainData,
+    pub command_data: CommandData,
+    pub depth_resources: DepthResources,
+    pub pipeline_data: PipelineData,
+    pub frame_data: FrameData,
+    pub texture_sampler: vk::Sampler,
+    
     pub gpu_entities: Vec<GpuEntity>,
     pub mesh_registry: MeshRegistry,
     pub texture_registry: TextureRegistry,
+
+    pub frame: usize,
+    pub resized: bool,
 
     pub camera: Camera,
     pub projection: Projection,
@@ -45,33 +47,13 @@ pub struct App {
 
 impl App {
     pub unsafe fn create(window: &Window) -> Result<Self> {
-        let loader = LibloadingLoader::new(LIBRARY)?;
-        let entry = Entry::new(loader).map_err(|b| anyhow!("{}", b))?;
-
-        let mut data = AppData::default();
-
-        let instance = create_instance(window, &entry, &mut data)?;
-        data.surface = vk_window::create_surface(&instance, &window, &window)?;
-        pick_physical_device(&instance, &mut data)?;
-        let device = create_logical_device(&entry, &instance, &mut data)?;
-        create_swapchain(window, &instance, &device, &mut data)?;
-        create_swapchain_image_views(&device, &mut data)?;
-        create_descriptor_set_layout(&device, &mut data)?;
-        create_pipeline(&instance, &device, &mut data)?;
-        create_command_pool(&instance, &device, &mut data)?;
-        create_depth_objects(&instance, &device, &mut data)?;
-
-        let allocator_options = vma::AllocatorOptions::new(&instance, &device, data.physical_device);
-        // allocator_options.version = Version::V1_4_0;
-        let allocator = vma::Allocator::new(&allocator_options)?;
-        data.allocator = Some(allocator);
-
-        create_texture_sampler(&device, &mut data)?;
-
-        create_descriptor_pool(&device, &mut data)?;
-        create_descriptor_sets(&device, &mut data)?;
-
-        let allocator = data.allocator.as_ref().unwrap();
+        let vulkan_context = VulkanContext::new(window)?;
+        let swapchain_data = SwapchainData::new(window, &vulkan_context)?;
+        let command_data = CommandData::new(&vulkan_context, &swapchain_data)?;
+        let depth_resources = DepthResources::new(&vulkan_context, &swapchain_data, &command_data)?;
+        let pipeline_data = PipelineData::new(&vulkan_context, &swapchain_data, &depth_resources)?;
+        let frame_data = FrameData::new(&vulkan_context, &swapchain_data, &pipeline_data)?;
+        let texture_sampler = create_texture_sampler(&vulkan_context)?;
 
         // Scene general
         let camera = Camera::new(
@@ -81,8 +63,8 @@ impl App {
         );
 
         let projection = Projection::new(
-            data.swapchain_extent.width,
-            data.swapchain_extent.height,
+            swapchain_data.swapchain_extent.width,
+            swapchain_data.swapchain_extent.height,
             Deg(90.0),
             0.1,
             10000.0,
@@ -105,7 +87,7 @@ impl App {
         let translation2 = Vector3 { x: 0.0, y: 0.0, z: 0.0 };
         let translation3 = Vector3 { x: -7.0, y: 0.0, z: 0.0 };
         let translation4 = Vector3 { x: -10.0, y: 0.0, z: 0.0 };
-        let translation5 = Vector3 { x: -15.0, y: 0.0, z: 10.0 };
+        let translation5 = Vector3 { x: 15.0, y: 0.0, z: 10.0 };
 
         let transform1 = Transform::new(translation1, rotation, scale);
         let transform2 = Transform::new(translation2, rotation, scale);
@@ -114,11 +96,11 @@ impl App {
         let transform5 = Transform::new(translation5, rotation, scale);
 
         // GPU side
-        let cube_gpu_mesh = GpuMesh::create_from_mesh(&cube_mesh, allocator, &device, &data)?;
-        let teapot_gpu_mesh = GpuMesh::create_from_mesh(&teapot_mesh, allocator, &device, &data)?;
-        let sphere_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_sphere(), allocator, &device, &data)?;
-        let generated_cube_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_cube(), allocator, &device, &data)?;
-        let tetrahedron_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_tetrahedron(), allocator, &device, &data)?;
+        let cube_gpu_mesh = GpuMesh::create_from_mesh(&cube_mesh, &vulkan_context, &command_data)?;
+        let teapot_gpu_mesh = GpuMesh::create_from_mesh(&teapot_mesh, &vulkan_context, &command_data)?;
+        let sphere_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_sphere(), &vulkan_context, &command_data)?;
+        let generated_cube_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_cube(), &vulkan_context, &command_data)?;
+        let tetrahedron_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_tetrahedron(), &vulkan_context, &command_data)?;
 
         let mut mesh_registry = MeshRegistry::new();
         let cube_mesh_id = mesh_registry.add(cube_gpu_mesh);
@@ -127,9 +109,9 @@ impl App {
         let generated_cube_mesh_id = mesh_registry.add(generated_cube_gpu_mesh);
         let tetrahedron_mesh_id = mesh_registry.add(tetrahedron_gpu_mesh);
 
-        let cube_texture = Texture::create_from_bitmap(&cube_bitmap, &instance, &device, &mut data)?;
-        let teapot_texture = Texture::create_from_bitmap(&teapot_bitmap, &instance, &device, &mut data)?;
-        let white_texture = Texture::create_from_bitmap(&white_bitmap, &instance, &device, &mut data)?;
+        let cube_texture = Texture::create_from_bitmap(&cube_bitmap, &vulkan_context, &command_data, texture_sampler)?;
+        let teapot_texture = Texture::create_from_bitmap(&teapot_bitmap, &vulkan_context, &command_data, texture_sampler)?;
+        let white_texture = Texture::create_from_bitmap(&white_bitmap, &vulkan_context, &command_data, texture_sampler)?;
 
         let mut texture_registry = TextureRegistry::new();
         let cube_texture_id = texture_registry.add(cube_texture);
@@ -151,38 +133,33 @@ impl App {
             let image_info = vk::DescriptorImageInfo::builder()
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                 .image_view(texture.image_view)
-                .sampler(data.texture_sampler);
+                .sampler(texture_sampler);
 
             let image_infos = &[image_info];
             let sampler_write = vk::WriteDescriptorSet::builder()
-                .dst_set(data.descriptor_set)
+                .dst_set(pipeline_data.descriptor_set)
                 .dst_binding(1)
                 .dst_array_element(id as u32)
                 .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                 .image_info(image_infos);
 
-            device.update_descriptor_sets(&[sampler_write], &[] as &[vk::CopyDescriptorSet]);
+            vulkan_context.device.update_descriptor_sets(&[sampler_write], &[] as &[vk::CopyDescriptorSet]);
         }
 
-
-        create_uniform_buffers(&instance, &device, &mut data)?;
-        create_command_buffers(&device, &mut data)?;
-        create_sync_objects(&device, &mut data)?;
-
-        Ok(Self { entry, instance, data, device, frame: 0, resized: false, start: Instant::now(), gpu_entities: entities, mesh_registry, texture_registry, camera, projection, camera_movement })
+        Ok(Self { vulkan_context, swapchain_data, command_data, depth_resources, pipeline_data, frame_data, texture_sampler, frame: 0, resized: false, gpu_entities: entities, mesh_registry, texture_registry, camera, projection, camera_movement })
     }
 
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
-        self.device.wait_for_fences(
-            &[self.data.in_flight_fences[self.frame]],
+        self.vulkan_context.device.wait_for_fences(
+            &[self.frame_data.in_flight_fences[self.frame]],
             true,
             u64::MAX,
         )?;
     
-        let result = self.device.acquire_next_image_khr(
-            self.data.swapchain,
+        let result = self.vulkan_context.device.acquire_next_image_khr(
+            self.swapchain_data.swapchain,
             u64::MAX,
-            self.data.image_available_semaphores[self.frame],
+            self.frame_data.image_available_semaphores[self.frame],
             vk::Fence::null(),
         );
 
@@ -194,23 +171,23 @@ impl App {
 
         // println!("{} img index. {} len self.data.render_finished_semaphores. {} frame", image_index, self.data.render_finished_semaphores.len(), self.frame);
 
-        if !self.data.images_in_flight[image_index as usize].is_null() {
-            self.device.wait_for_fences(
-                &[self.data.images_in_flight[image_index as usize]],
+        if !self.frame_data.images_in_flight[image_index as usize].is_null() {
+            self.vulkan_context.device.wait_for_fences(
+                &[self.frame_data.images_in_flight[image_index as usize]],
                 true,
                 u64::MAX,
             )?;
         }
     
-        self.data.images_in_flight[image_index as usize] = self.data.in_flight_fences[self.frame];
+        self.frame_data.images_in_flight[image_index as usize] = self.frame_data.in_flight_fences[self.frame];
 
-        self.update_command_buffer(image_index)?;
+        self.command_data.update_command_buffer(image_index, &self.vulkan_context, &self.swapchain_data, &self.depth_resources, &self.pipeline_data, &self.gpu_entities, &self.mesh_registry, &self.texture_registry)?;
         self.update_uniform_buffer(image_index)?;
 
-        let wait_semaphores = &[self.data.image_available_semaphores[self.frame]];
+        let wait_semaphores = &[self.frame_data.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
-        let command_buffers = &[self.data.command_buffers[image_index as usize]];
-        let signal_semaphores = &[self.data.render_finished_semaphores[image_index as usize]];
+        let command_buffers = &[self.command_data.command_buffers[image_index]];
+        let signal_semaphores = &[self.frame_data.render_finished_semaphores[image_index]];
         let submit_info = vk::SubmitInfo::builder()
             .wait_semaphores(wait_semaphores)
             .wait_dst_stage_mask(wait_stages)
@@ -218,18 +195,18 @@ impl App {
             .signal_semaphores(signal_semaphores);
 
 
-        self.device.reset_fences(&[self.data.in_flight_fences[self.frame]])?;
+        self.vulkan_context.device.reset_fences(&[self.frame_data.in_flight_fences[self.frame]])?;
 
-        self.device.queue_submit(self.data.graphics_queue, &[submit_info], self.data.in_flight_fences[self.frame])?;
+        self.vulkan_context.device.queue_submit(self.vulkan_context.graphics_queue, &[submit_info], self.frame_data.in_flight_fences[self.frame])?;
 
-        let swapchains = &[self.data.swapchain];
+        let swapchains = &[self.swapchain_data.swapchain];
         let image_indices = &[image_index as u32];
         let present_info = vk::PresentInfoKHR::builder()
             .wait_semaphores(signal_semaphores)
             .swapchains(swapchains)
             .image_indices(image_indices);
 
-        let result = self.device.queue_present_khr(self.data.present_queue, &present_info);
+        let result = self.vulkan_context.device.queue_present_khr(self.vulkan_context.present_queue, &present_info);
         let changed = result == Ok(vk::SuccessCode::SUBOPTIMAL_KHR) || result == Err(vk::ErrorCode::OUT_OF_DATE_KHR);
         if self.resized || changed {
             self.resized = false;
@@ -242,268 +219,42 @@ impl App {
         Ok(())
     }
 
-    pub unsafe fn destroy(&mut self) {
-        // old destroy swapchain
-        self.device.destroy_image_view(self.data.depth_image_view, None);
-        self.device.free_memory(self.data.depth_image_memory, None);
-        self.device.destroy_image(self.data.depth_image, None);
-        self.device.destroy_descriptor_pool(self.data.descriptor_pool, None);
-        self.data.uniform_buffers
-            .iter()
-            .for_each(|b| self.device.destroy_buffer(*b, None));
-        self.data.uniform_buffers_memory
-            .iter()
-            .for_each(|m| self.device.free_memory(*m, None));
-        self.device.free_command_buffers(self.data.command_pool, &self.data.command_buffers);
-        self.device.destroy_pipeline(self.data.pipeline, None);
-        self.device.destroy_pipeline_layout(self.data.pipeline_layout, None);
-        self.data.swapchain_image_views
-            .iter()
-            .for_each(|v| self.device.destroy_image_view(*v, None));
-        self.device.destroy_swapchain_khr(self.data.swapchain, None);
-        // end of old destroy swapchain
-
-        self.device.destroy_sampler(self.data.texture_sampler, None);
-        self.device.destroy_descriptor_set_layout(self.data.descriptor_set_layout, None);
-
-        // self.gpu_render_objects
-        //     .iter()
-        //     .for_each(|o| o.destroy(&self.device, self.data.allocator.as_ref().unwrap()));
+    pub unsafe fn destroy(self) {
+        for mesh in self.mesh_registry.into_items() {
+            mesh.destroy(&self.vulkan_context);
+        }
 
         for texture in self.texture_registry.into_items() {
-            self.device.destroy_image_view(texture.image_view, None);
-            self.device.destroy_image(texture.image, None);
-            self.device.free_memory(texture.image_memory, None);
+            texture.destroy(&self.vulkan_context);
         }
 
-        let allocator = self.data.allocator.take().expect("AAAA");
-        for mesh in self.mesh_registry.into_items() {
-            allocator.destroy_buffer(mesh.index_buffer.buffer, mesh.index_buffer.allocation);
-            allocator.destroy_buffer(mesh.vertex_buffer.buffer, mesh.vertex_buffer.allocation);
-        }
+        self.vulkan_context.device.destroy_sampler(self.texture_sampler, None);
 
-
-        self.data.in_flight_fences
-            .iter()
-            .for_each(|f| self.device.destroy_fence(*f, None));
-        self.data.render_finished_semaphores
-            .iter()
-            .for_each(|s| self.device.destroy_semaphore(*s, None));
-        self.data.image_available_semaphores
-            .iter()
-            .for_each(|s| self.device.destroy_semaphore(*s, None));
-        self.device.destroy_command_pool(self.data.command_pool, None);
-        drop(allocator);
-        self.device.destroy_device(None);
-        self.instance.destroy_surface_khr(self.data.surface, None);
-    
-        if VALIDATION_ENABLED {
-            self.instance.destroy_debug_utils_messenger_ext(self.data.messenger, None);
-        }
-    
-        self.instance.destroy_instance(None);
+        self.frame_data.destroy(&self.vulkan_context);
+        self.pipeline_data.destroy(&self.vulkan_context);
+        self.depth_resources.destroy(&self.vulkan_context);
+        self.command_data.destroy(&self.vulkan_context);
+        self.swapchain_data.destroy(&self.vulkan_context);
+        self.vulkan_context.destroy();
     }
 
     pub unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
-        self.device.device_wait_idle()?;
+        self.vulkan_context.device.device_wait_idle()?;
 
-        self.data.swapchain_image_views
-            .iter()
-            .for_each(|v| self.device.destroy_image_view(*v, None));
-        self.device.destroy_image_view(self.data.depth_image_view, None);
-        self.device.free_memory(self.data.depth_image_memory, None);
-        self.device.destroy_image(self.data.depth_image, None);
-        self.device.destroy_swapchain_khr(self.data.swapchain, None);
+        // TODO
+        // self.data.swapchain_image_views
+        //     .iter()
+        //     .for_each(|v| self.vulkan_context.device.destroy_image_view(*v, None));
+        // self.vulkan_context.device.destroy_image_view(self.data.depth_image_view, None);
+        // self.vulkan_context.device.free_memory(self.data.depth_image_memory, None);
+        // self.vulkan_context.device.destroy_image(self.data.depth_image, None);
+        // self.vulkan_context.device.destroy_swapchain_khr(self.data.swapchain, None);
 
-        create_swapchain(window, &self.instance, &self.device, &mut self.data)?;
-        create_swapchain_image_views(&self.device, &mut self.data)?;
-        create_depth_objects(&self.instance, &self.device, &mut self.data)?;
+        // create_swapchain(window, &self.instance, &self.vulkan_context.device, &mut self.data)?;
+        // create_swapchain_image_views(&self.vulkan_context.device, &mut self.data)?;
+        // create_depth_objects(&self.instance, &self.vulkan_context.device, &mut self.data)?;
 
-        self.projection.resize(self.data.swapchain_extent.width, self.data.swapchain_extent.height);
-
-        Ok(())
-    }
-
-    pub fn trs_matrix(
-        translation: Vector3<f32>,
-        rotation: Quaternion<f32>,
-        scale: Vector3<f32>,
-    ) -> Matrix4<f32> {
-        let t = Matrix4::from_translation(translation);
-        let r = Matrix4::from(rotation);
-        let s = Matrix4::from_nonuniform_scale(scale.x, scale.y, scale.z);
-
-        t * r * s
-    }
-
-    unsafe fn update_command_buffer(&mut self, image_index: usize) -> Result<()> {
-        let command_buffer = self.data.command_buffers[image_index];
-
-        self.device.reset_command_buffer(
-            command_buffer,
-            vk::CommandBufferResetFlags::empty(),
-        )?;
-
-        let time = self.start.elapsed().as_secs_f32();
-
-
-        let info = vk::CommandBufferBeginInfo::builder()
-            .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-
-        self.device.begin_command_buffer(command_buffer, &info)?;
-
-        let render_area = vk::Rect2D::builder()
-            .offset(vk::Offset2D::default())
-            .extent(self.data.swapchain_extent);
-
-        let color_clear_value = vk::ClearValue {
-            color: vk::ClearColorValue {
-                float32: [0.0, 0.0, 0.0, 1.0],
-            },
-        };
-
-        let depth_clear_value = vk::ClearValue {
-            depth_stencil: vk::ClearDepthStencilValue {
-                depth: 1.0,
-                stencil: 0,
-            },
-        };
-
-        let color_attachment = vk::RenderingAttachmentInfo::builder()
-            .image_view(self.data.swapchain_image_views[image_index])
-            .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .clear_value(color_clear_value);
-        let color_attachments = [color_attachment];
-
-        let depth_attachment = vk::RenderingAttachmentInfo::builder()
-            .image_view(self.data.depth_image_view)
-            .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .clear_value(depth_clear_value);
-
-        let rendering_info = vk::RenderingInfo::builder()
-            .render_area(render_area)
-            .layer_count(1)
-            .color_attachments(&color_attachments)
-            .depth_attachment(&depth_attachment);
-
-        let color_range = vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: 1,
-            base_array_layer: 0,
-            layer_count: 1,
-        };
-
-        let barrier = vk::ImageMemoryBarrier2::builder()
-            .old_layout(vk::ImageLayout::UNDEFINED)
-            .new_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .src_access_mask(vk::AccessFlags2::empty())
-            .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_READ | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
-            .image(self.data.swapchain_images[image_index])
-            .subresource_range(color_range)
-            .src_stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE)
-            .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT);
-
-        let binding = [barrier];
-        let dependency_info = vk::DependencyInfo::builder()
-            .image_memory_barriers(&binding);
-
-        self.device.cmd_pipeline_barrier2(
-            command_buffer,
-            &dependency_info
-        );
-
-        self.device.cmd_begin_rendering(command_buffer, &rendering_info);
-        self.device.cmd_bind_pipeline(command_buffer, vk::PipelineBindPoint::GRAPHICS, self.data.pipeline);
-
-        let viewport = vk::Viewport::builder()
-            .x(0.0)
-            .y(0.0)
-            .width(self.data.swapchain_extent.width as f32)
-            .height(self.data.swapchain_extent.height as f32)
-            .min_depth(0.0)
-            .max_depth(1.0);
-
-        let scissor = vk::Rect2D::builder()
-            .offset(vk::Offset2D { x: 0, y: 0 })
-            .extent(self.data.swapchain_extent);
-
-        self.device.cmd_set_viewport(command_buffer, 0, &[viewport]);
-        self.device.cmd_set_scissor(command_buffer, 0, &[scissor]);
-
-        self.device.cmd_bind_descriptor_sets(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            self.data.pipeline_layout,
-            0,
-            &[self.data.descriptor_set],
-            &[],
-        );
-
-        for gpu_entity in &self.gpu_entities {
-            let mesh = self.mesh_registry.get(gpu_entity.mesh_id);
-            let texture = self.texture_registry.get(gpu_entity.texture_id);
-
-            // TODO: have only 1 buffer for both and use offset instead, nvidia dev guide says it's very bad now
-            self.device.cmd_bind_vertex_buffers(command_buffer, 0, &[mesh.vertex_buffer.buffer], &[0]);
-            self.device.cmd_bind_index_buffer(command_buffer, mesh.index_buffer.buffer, 0, vk::IndexType::UINT32);
-
-            let mut new_rotation = gpu_entity.transform.rotation.clone();
-            new_rotation.y *= time;
-            let new_quaternion = Quaternion::from(new_rotation);
-            let model = Self::trs_matrix(gpu_entity.transform.translation, new_quaternion, gpu_entity.transform.scale);
-            let model_bytes = std::slice::from_raw_parts(
-                &model as *const Matrix4<f32> as *const u8,
-                size_of::<Matrix4<f32>>()
-            );
-
-            self.device.cmd_push_constants(
-                command_buffer,
-                self.data.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
-                0,
-                model_bytes,
-            );
-
-            let obj_index_bytes = std::slice::from_raw_parts(&(gpu_entity.texture_id.0 as u32) as *const u32 as *const u8, 4);
-            self.device.cmd_push_constants(
-                command_buffer,
-                self.data.pipeline_layout,
-                vk::ShaderStageFlags::FRAGMENT,
-                64, // offset vertex push constants
-                obj_index_bytes,
-            );
-
-            self.device.cmd_draw_indexed(command_buffer, mesh.index_count, 1, 0, 0, 0);
-        }
-
-        self.device.cmd_end_rendering(command_buffer);
-
-        // TODO: abstract this bullshit
-        let barrier = vk::ImageMemoryBarrier2::builder()
-            .old_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-            .new_layout(vk::ImageLayout::PRESENT_SRC_KHR)
-            .src_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
-            .dst_access_mask(vk::AccessFlags2::empty())
-            .image(self.data.swapchain_images[image_index])
-            .subresource_range(color_range)
-            .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
-            .dst_stage_mask(vk::PipelineStageFlags2::BOTTOM_OF_PIPE);
-
-        let binding = [barrier];
-        let dependency_info = vk::DependencyInfo::builder()
-            .image_memory_barriers(&binding);
-
-        self.device.cmd_pipeline_barrier2(
-            command_buffer,
-            &dependency_info
-        );
-
-        self.device.end_command_buffer(command_buffer)?;
+        // self.projection.resize(self.data.swapchain_extent.width, self.data.swapchain_extent.height);
 
         Ok(())
     }
@@ -513,8 +264,8 @@ impl App {
         let proj = self.projection.get_perspective_projection_matrix();
         let ubo = UniformBufferObject { view, proj };
 
-        let memory = self.device.map_memory(
-            self.data.uniform_buffers_memory[self.frame],
+        let memory = self.vulkan_context.device.map_memory(
+            self.frame_data.uniform_buffers_memory[self.frame],
             0,
             size_of::<UniformBufferObject>() as u64,
             vk::MemoryMapFlags::empty(),
@@ -522,52 +273,8 @@ impl App {
         
         memcpy(&ubo, memory.cast(), 1);
 
-        self.device.unmap_memory(self.data.uniform_buffers_memory[self.frame]);
+        self.vulkan_context.device.unmap_memory(self.frame_data.uniform_buffers_memory[self.frame]);
 
         Ok(())
     }
-}
-
-#[derive(Debug, Default)]
-pub struct AppData {
-    pub surface: vk::SurfaceKHR,
-    pub messenger: vk::DebugUtilsMessengerEXT,
-    pub physical_device: vk::PhysicalDevice,
-    pub graphics_queue: vk::Queue,
-    pub present_queue: vk::Queue,
-    pub swapchain_format: vk::Format,
-    pub swapchain_extent: vk::Extent2D,
-    pub swapchain: vk::SwapchainKHR,
-    pub swapchain_images: Vec<vk::Image>,
-    pub swapchain_image_views: Vec<vk::ImageView>,
-    pub descriptor_set_layout: vk::DescriptorSetLayout,
-    pub pipeline_layout: vk::PipelineLayout,
-    pub pipeline: vk::Pipeline,
-    pub command_pool: vk::CommandPool,
-    pub command_buffers: Vec<vk::CommandBuffer>,
-    pub image_available_semaphores: Vec<vk::Semaphore>,
-    pub render_finished_semaphores: Vec<vk::Semaphore>,
-    pub in_flight_fences: Vec<vk::Fence>,
-    pub images_in_flight: Vec<vk::Fence>,
-    // pub vertices: Vec<Vertex>,
-    // pub indices: Vec<u32>,
-    // pub vertex_buffer: vk::Buffer,
-    // pub vertex_buffer_memory: vk::DeviceMemory,
-    // pub index_buffer: vk::Buffer,
-    // pub index_buffer_memory: vk::DeviceMemory,
-    pub uniform_buffers: Vec<vk::Buffer>,
-    pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
-    pub descriptor_pool: vk::DescriptorPool,
-    pub descriptor_set: vk::DescriptorSet,
-    pub ubo_index: i32,
-    // pub sampler_index: i32,
-    // pub texture_image: vk::Image,
-    // pub texture_image_memory: vk::DeviceMemory,
-    // pub texture_image_view: vk::ImageView,
-    pub texture_sampler: vk::Sampler,
-    pub depth_image: vk::Image,
-    pub depth_image_memory: vk::DeviceMemory,
-    pub depth_image_view: vk::ImageView,
-
-    pub allocator: Option<vma::Allocator>,
 }
