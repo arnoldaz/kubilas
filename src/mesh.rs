@@ -1,5 +1,5 @@
 use std::{collections::HashMap, f32::consts::PI, fs::File, io::BufReader};
-use cgmath::{Vector2, Vector3, Zero};
+use cgmath::{Vector2, Vector3, Vector4, Zero};
 use crate::vertex::Vertex;
 use anyhow::Result;
 

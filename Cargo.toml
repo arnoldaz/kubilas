@@ -15,3 +15,8 @@ vulkanalia = { version = "0.34.0", features = ["libloading", "provisional", "win
 winit = "0.30.12"
 rand = "0.9.2"
 vulkanalia-vma = "0.8.0"
+
+[profile.release]
+debug = true
+overflow-checks = true
+opt-level = 1

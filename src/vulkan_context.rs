@@ -24,7 +24,7 @@ pub struct VulkanContext {
 }
 
 impl VulkanContext {
-    const VALIDATION_ENABLED: bool = cfg!(debug_assertions);
+    const VALIDATION_ENABLED: bool = true;
     const VALIDATION_LAYER: vk::ExtensionName = vk::ExtensionName::from_bytes(b"VK_LAYER_KHRONOS_validation");
     const DEVICE_EXTENSIONS: &[vk::ExtensionName] = &[vk::KHR_SWAPCHAIN_EXTENSION.name];
 
@@ -99,7 +99,18 @@ impl VulkanContext {
             .message_type(vk::DebugUtilsMessageTypeFlagsEXT::GENERAL | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE)
             .user_callback(Some(Self::debug_callback));
 
+        let verbose_value: [u32; 1] = [1];
+        let layer_settings = vk::LayerSettingEXT::builder()
+            .layer_name(b"VK_LAYER_KHRONOS_validation\0")
+            .setting_name(b"validate_sync\0")
+            .values_bool32(&verbose_value);
+
+        let layer_settings_vec = [layer_settings];
+        let mut layer_settings_create_info = vk::LayerSettingsCreateInfoEXT::builder()
+            .settings(&layer_settings_vec);
+
         if Self::VALIDATION_ENABLED {
+            info = info.push_next(&mut layer_settings_create_info);
             info = info.push_next(&mut debug_info);
         }
 

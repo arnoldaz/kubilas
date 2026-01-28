@@ -1,10 +1,11 @@
 use anyhow::{anyhow, Result};
+use rand::Rng;
 use winit::window::Window;
 
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands};
 
-use std::mem::size_of;
+use std::mem::{self, size_of};
 use cgmath::{Deg, Euler, Rad, Vector3, point3};
 
 use crate::bitmap::Bitmap;
@@ -127,9 +128,24 @@ impl App {
 
         let entities = vec![entity1, entity2, entity3, entity4, entity5];
 
+        // let mut rng = rand::rng();
+        // let mut transforms = Vec::<Transform>::new();
+        // for _ in 0..10000 {
+        //     let random_x: f32 = rng.random_range(-100.0..100.0);
+        //     let random_y: f32 = rng.random_range(-100.0..100.0);
+        //     let random_z: f32 = rng.random_range(-100.0..100.0);
+
+        //     let translation = Vector3 { x: random_x, y: random_y, z: random_z };
+        //     transforms.push(Transform::new(translation, rotation, scale));
+        // }
+
+        // for transform in transforms {
+        //     entities.push(GpuEntity { mesh_id: tetrahedron_mesh_id, texture_id: white_texture_id, transform: transform });
+        // }
+
         for id in 0..texture_registry.size() {
             let texture = texture_registry.get(TextureId(id));
-            // data.sampler_index += 1;
+
             let image_info = vk::DescriptorImageInfo::builder()
                 .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
                 .image_view(texture.image_view)
@@ -241,20 +257,16 @@ impl App {
     pub unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.vulkan_context.device.device_wait_idle()?;
 
-        // TODO
-        // self.data.swapchain_image_views
-        //     .iter()
-        //     .for_each(|v| self.vulkan_context.device.destroy_image_view(*v, None));
-        // self.vulkan_context.device.destroy_image_view(self.data.depth_image_view, None);
-        // self.vulkan_context.device.free_memory(self.data.depth_image_memory, None);
-        // self.vulkan_context.device.destroy_image(self.data.depth_image, None);
-        // self.vulkan_context.device.destroy_swapchain_khr(self.data.swapchain, None);
+        let old_swapchain = mem::take(&mut self.swapchain_data);
+        old_swapchain.destroy(&self.vulkan_context);
 
-        // create_swapchain(window, &self.instance, &self.vulkan_context.device, &mut self.data)?;
-        // create_swapchain_image_views(&self.vulkan_context.device, &mut self.data)?;
-        // create_depth_objects(&self.instance, &self.vulkan_context.device, &mut self.data)?;
+        let old_depth = mem::take(&mut self.depth_resources);
+        old_depth.destroy(&self.vulkan_context);
 
-        // self.projection.resize(self.data.swapchain_extent.width, self.data.swapchain_extent.height);
+        self.swapchain_data = SwapchainData::new(window, &self.vulkan_context)?;
+        self.depth_resources = DepthResources::new(&self.vulkan_context, &self.swapchain_data, &self.command_data)?;
+
+        self.projection.resize(self.swapchain_data.swapchain_extent.width, self.swapchain_data.swapchain_extent.height);
 
         Ok(())
     }

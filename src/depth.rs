@@ -2,6 +2,7 @@ use vulkanalia::vk::{self, DeviceV1_0, InstanceV1_0};
 use anyhow::{anyhow, Result};
 use crate::{command::CommandData, swapchain::SwapchainData, vulkan::{create_image, create_image_view, transition_image_layout}, vulkan_context::VulkanContext};
 
+#[derive(Default)]
 pub struct DepthResources {
     pub depth_format: vk::Format,
     pub depth_image: vk::Image,

@@ -3,6 +3,7 @@ use vulkanalia::vk::{self, DeviceV1_0, Handle, HasBuilder, KhrSurfaceExtensionIn
 use winit::window::Window;
 use crate::{vulkan::create_image_view, vulkan_context::VulkanContext};
 
+#[derive(Default)]
 pub struct SwapchainData {
     pub swapchain: vk::SwapchainKHR,
     pub swapchain_images: Vec<vk::Image>,

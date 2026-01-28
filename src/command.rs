@@ -149,7 +149,7 @@ impl CommandData {
             .dst_access_mask(vk::AccessFlags2::COLOR_ATTACHMENT_READ | vk::AccessFlags2::COLOR_ATTACHMENT_WRITE)
             .image(swapchain_data.swapchain_images[image_index])
             .subresource_range(color_range)
-            .src_stage_mask(vk::PipelineStageFlags2::TOP_OF_PIPE)
+            .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
             .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT);
 
         let binding = [barrier];
@@ -236,7 +236,7 @@ impl CommandData {
             .image(swapchain_data.swapchain_images[image_index])
             .subresource_range(color_range)
             .src_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT)
-            .dst_stage_mask(vk::PipelineStageFlags2::BOTTOM_OF_PIPE);
+            .dst_stage_mask(vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT);
 
         let binding = [barrier];
         let dependency_info = vk::DependencyInfo::builder()
