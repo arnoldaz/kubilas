@@ -207,7 +207,7 @@ impl ApplicationHandler for WindowHandler {
 
 fn main() -> Result<()> {
     pretty_env_logger::formatted_builder()
-        .filter_level(log::LevelFilter::Error)
+        .filter_level(log::LevelFilter::Warn)
         .init();
 
     let event_loop = EventLoop::new()?;

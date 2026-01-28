@@ -190,7 +190,7 @@ impl CommandData {
 
         for gpu_entity in entities {
             let mesh = mesh_registry.get(gpu_entity.mesh_id);
-            let texture = texture_registry.get(gpu_entity.texture_id);
+            // let texture = texture_registry.get(gpu_entity.texture_id);
 
             // TODO: have only 1 buffer for both and use offset instead, nvidia dev guide says it's very bad now
             vulkan_context.device.cmd_bind_vertex_buffers(command_buffer, 0, &[mesh.vertex_buffer.buffer], &[0]);
@@ -213,13 +213,14 @@ impl CommandData {
                 model_bytes,
             );
 
-            let obj_index_bytes = std::slice::from_raw_parts(&(gpu_entity.texture_id.0 as u32) as *const u32 as *const u8, 4);
+            let id = gpu_entity.texture_id.0 as u32;
+            // let obj_index_bytes = std::slice::from_raw_parts(&id as *const u32 as *const u8, 4);
             vulkan_context.device.cmd_push_constants(
                 command_buffer,
                 pipeline_data.pipeline_layout,
                 vk::ShaderStageFlags::FRAGMENT,
                 64, // offset vertex push constants
-                obj_index_bytes,
+                &id.to_ne_bytes(),
             );
 
             vulkan_context.device.cmd_draw_indexed(command_buffer, mesh.index_count, 1, 0, 0, 0);
