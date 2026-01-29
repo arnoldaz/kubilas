@@ -13,12 +13,12 @@ pub struct Texture {
     pub image: vk::Image,
     pub image_memory: vk::DeviceMemory,
     pub image_view: vk::ImageView,
-    pub sampler: vk::Sampler,
+    pub _sampler: vk::Sampler,
 }
 
 impl Texture {
-    pub fn new(image: vk::Image, image_memory: vk::DeviceMemory, image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
-        Self { image, image_memory, image_view, sampler }
+    pub fn _new(image: vk::Image, image_memory: vk::DeviceMemory, image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
+        Self { image, image_memory, image_view, _sampler: sampler }
     }
 
     pub unsafe fn destroy(self, vulkan_context: &VulkanContext) {
@@ -99,7 +99,7 @@ impl Texture {
             vk::ImageAspectFlags::COLOR,
         )?;
 
-        Ok( Self { image: texture_image, image_memory: texture_image_memory, image_view: texture_image_view, sampler } )
+        Ok( Self { image: texture_image, image_memory: texture_image_memory, image_view: texture_image_view, _sampler: sampler } )
     }
 
 }

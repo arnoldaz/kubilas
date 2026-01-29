@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use rand::Rng;
 use winit::window::Window;
 
 use vulkanalia::prelude::v1_0::*;
@@ -198,7 +197,7 @@ impl App {
         self.frame_data.images_in_flight[image_index as usize] = self.frame_data.in_flight_fences[self.frame];
 
         self.command_data.update_command_buffer(image_index, &self.vulkan_context, &self.swapchain_data, &self.depth_resources, &self.pipeline_data, &self.gpu_entities, &self.mesh_registry, &self.texture_registry)?;
-        self.update_uniform_buffer(image_index)?;
+        self.update_uniform_buffer()?;
 
         let wait_semaphores = &[self.frame_data.image_available_semaphores[self.frame]];
         let wait_stages = &[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -271,7 +270,7 @@ impl App {
         Ok(())
     }
 
-    unsafe fn update_uniform_buffer(&self, image_index: usize) -> Result<()> {
+    unsafe fn update_uniform_buffer(&self) -> Result<()> {
         let view = self.camera.get_view_matrix();
         let proj = self.projection.get_perspective_projection_matrix();
         let ubo = UniformBufferObject { view, proj };

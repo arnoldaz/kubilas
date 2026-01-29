@@ -9,7 +9,7 @@ pub struct Bitmap {
 }
 
 impl Bitmap {
-    pub fn new(pixels: Vec<u8>, width: u32, height: u32) -> Self {
+    pub fn _new(pixels: Vec<u8>, width: u32, height: u32) -> Self {
         Self { pixels, width, height }
     }
 

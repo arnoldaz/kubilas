@@ -1,5 +1,5 @@
 use std::{collections::HashMap, f32::consts::PI, fs::File, io::BufReader};
-use cgmath::{Vector2, Vector3, Vector4, Zero};
+use cgmath::{Vector2, Vector3, Zero};
 use crate::vertex::Vertex;
 use anyhow::Result;
 
@@ -9,7 +9,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
+    pub fn _new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
         Self { vertices, indices }
     }
 

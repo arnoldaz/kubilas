@@ -80,7 +80,7 @@ impl CommandData {
     }
 
     pub unsafe fn update_command_buffer(&mut self, image_index: usize, vulkan_context: &VulkanContext, swapchain_data: &SwapchainData, depth_resources: &DepthResources, pipeline_data: &PipelineData, entities: &Vec<GpuEntity>,
-        mesh_registry: &MeshRegistry, texture_registry: &TextureRegistry) -> Result<()> {
+        mesh_registry: &MeshRegistry, _texture_registry: &TextureRegistry) -> Result<()> {
         let command_buffer = self.command_buffers[image_index];
 
         vulkan_context.device.reset_command_buffer(

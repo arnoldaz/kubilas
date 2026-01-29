@@ -2,7 +2,7 @@ use cgmath::{Euler, Rad, Vector3};
 use crate::registry::{MeshId, MeshRegistry, TextureId, TextureRegistry};
 
 // Maybe use it like that somehow
-pub struct Scene {
+pub struct _Scene {
     pub entities: Vec<GpuEntity>,
     pub texture_registry: TextureRegistry,
     pub mesh_registry: MeshRegistry,

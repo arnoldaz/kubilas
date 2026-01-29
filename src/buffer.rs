@@ -9,7 +9,7 @@ pub struct BufferAllocation {
 }
 
 impl BufferAllocation {
-    pub fn new(buffer: vk::Buffer, allocation: vma::Allocation) -> Self {
+    pub fn _new(buffer: vk::Buffer, allocation: vma::Allocation) -> Self {
         Self { buffer, allocation }
     }
 
