@@ -15,7 +15,6 @@ mod pipeline;
 mod command;
 mod depth;
 mod frame_data;
-mod ui;
 
 use std::time::{Instant};
 
@@ -81,11 +80,18 @@ impl WindowHandler {
                         
                         let full_output = egui_ctx.run(raw_input, |ctx| {
                             // ctx.set_visuals_of(egui::Theme::Dark, egui::Visuals { window_fill: egui::Color32::RED, ..Default::default() });
-                            let font_id = egui::FontId::proportional(14.0);
                             ctx.fonts_mut(|fonts| {
-                                for c in ' '..='~' {
-                                    fonts.glyph_width(&font_id, c);
+                                let mut s = String::new();
+                                for c in 32u8..127u8 {
+                                    s.push(c as char);
                                 }
+
+                                // Force layout (this triggers rasterization)
+                                fonts.layout_no_wrap(
+                                    s,
+                                    egui::FontId::proportional(14.0),
+                                    egui::Color32::WHITE,
+                                );
                             });
 
                             egui::Window::new("Debug").show(ctx, |ui| {
@@ -98,7 +104,7 @@ impl WindowHandler {
                                 let _ = ui.button("Click");
                                 let _ = ui.button("Click");
                                 let _ = ui.button("Click niggasjkdhjsakdhsakjdhaskjdhsakjdhjsad");
-                                let response = ui.add(egui::TextEdit::singleline(&mut self.my_string));
+                                let response = ui.add(egui::TextEdit::singleline(&mut self.my_string).font(egui::FontId::proportional(14.0)));
                             });
                         });
 
@@ -112,6 +118,7 @@ impl WindowHandler {
                         app.clipped_primitives = clipped_primitives;    
                         let textures_delta = full_output.textures_delta;
                         app.textures_delta = textures_delta;
+                        // println!("suck a nigga dick, {} {}", app.textures_delta.set.len(), app.textures_delta.free.len());
                         // for (id, delta) in &full_output.textures_delta.set {
                         //     self.egui_renderer.upload_texture(*id, delta);
                         // }
