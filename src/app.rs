@@ -4,8 +4,9 @@ use winit::window::Window;
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands};
 
+use std::collections::HashMap;
 use std::mem::{self, size_of};
-use cgmath::{Deg, Euler, Rad, Vector3, point3};
+use cgmath::{Deg, Euler, Rad, Vector3, point3, vec2};
 
 use crate::bitmap::Bitmap;
 use crate::camera::{Camera, CameraMovement, Projection};
@@ -43,6 +44,10 @@ pub struct App {
     pub camera: Camera,
     pub projection: Projection,
     pub camera_movement: CameraMovement,
+
+    pub clipped_primitives: Vec<egui::ClippedPrimitive>,
+    pub textures_delta: egui::TexturesDelta,
+    pub ui_texture_id_map: HashMap<egui::TextureId, TextureId>,
 }
 
 impl App {
@@ -161,7 +166,25 @@ impl App {
             vulkan_context.device.update_descriptor_sets(&[sampler_write], &[] as &[vk::CopyDescriptorSet]);
         }
 
-        Ok(Self { vulkan_context, swapchain_data, command_data, depth_resources, pipeline_data, frame_data, texture_sampler, frame: 0, resized: false, gpu_entities: entities, mesh_registry, texture_registry, camera, projection, camera_movement })
+        Ok(Self { vulkan_context,
+            swapchain_data,
+            command_data,
+            depth_resources,
+            pipeline_data,
+            frame_data,
+            texture_sampler,
+            frame: 0,
+            resized: false,
+            gpu_entities: entities,
+            mesh_registry,
+            texture_registry,
+            camera,
+            projection,
+            camera_movement,
+            clipped_primitives: Vec::new(),
+            textures_delta: Default::default(),
+            ui_texture_id_map: Default::default(),
+        })
     }
 
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
@@ -196,7 +219,61 @@ impl App {
     
         self.frame_data.images_in_flight[image_index as usize] = self.frame_data.in_flight_fences[self.frame];
 
-        self.command_data.update_command_buffer(image_index, &self.vulkan_context, &self.swapchain_data, &self.depth_resources, &self.pipeline_data, &self.gpu_entities, &self.mesh_registry, &self.texture_registry)?;
+        for (texture_id, image_delta) in self.textures_delta.set.clone() {
+            if self.ui_texture_id_map.contains_key(&texture_id) {
+                continue
+            }
+
+            match image_delta.image {
+                egui::epaint::image::ImageData::Color(image) => {
+                    let [width, height] = image.size;
+                    let bytes = image.pixels
+                        .clone()
+                        .into_iter()
+                        .flat_map(|c| [c.r(), c.g(), c.b(), c.a()])
+                        .collect::<Vec<u8>>();
+
+                    let _ = Bitmap::save_png("D:\\test.png", width as u32, height as u32, &bytes.clone());
+
+                    let bitmap = Bitmap::new(bytes, width as u32, height as u32);
+
+
+                    let texture = Texture::create_from_bitmap(&bitmap, &self.vulkan_context, &self.command_data, self.texture_sampler)?;
+                    let id = self.texture_registry.add(texture);
+                    println!("{}ajskldh sajk", id.0);
+                    self.ui_texture_id_map.insert(texture_id, id);
+
+                    let saved_texture = self.texture_registry.get(id);
+                    let image_info = vk::DescriptorImageInfo::builder()
+                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                        .image_view(saved_texture.image_view)
+                        .sampler(self.texture_sampler);
+
+                    let image_infos = &[image_info];
+                    let sampler_write = vk::WriteDescriptorSet::builder()
+                        .dst_set(self.pipeline_data.descriptor_set)
+                        .dst_binding(1)
+                        .dst_array_element(id.0 as u32)
+                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .image_info(image_infos);
+
+                    self.vulkan_context.device.update_descriptor_sets(&[sampler_write], &[] as &[vk::CopyDescriptorSet]);
+                }
+            }
+        }
+
+        self.command_data.update_command_buffer(
+            image_index,
+            &self.vulkan_context,
+            &self.swapchain_data,
+            &self.depth_resources,
+            &self.pipeline_data,
+            &self.gpu_entities,
+            &self.mesh_registry,
+            &self.texture_registry,
+            self.clipped_primitives.clone(), // VERY BAD
+            self.ui_texture_id_map.clone(),
+        )?;
         self.update_uniform_buffer()?;
 
         let wait_semaphores = &[self.frame_data.image_available_semaphores[self.frame]];
@@ -273,7 +350,7 @@ impl App {
     unsafe fn update_uniform_buffer(&self) -> Result<()> {
         let view = self.camera.get_view_matrix();
         let proj = self.projection.get_perspective_projection_matrix();
-        let ubo = UniformBufferObject { view, proj };
+        let ubo = UniformBufferObject { view, proj, screen_size: vec2(self.swapchain_data.swapchain_extent.width, self.swapchain_data.swapchain_extent.height) };
 
         let memory = self.vulkan_context.device.map_memory(
             self.frame_data.uniform_buffers_memory[self.frame],

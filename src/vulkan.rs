@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use cgmath::Vector2;
 use vulkanalia::prelude::v1_0::*;
 use std::mem::size_of;
 type Mat4 = cgmath::Matrix4<f32>;
@@ -79,6 +80,7 @@ pub unsafe fn copy_buffer(vulkan_context: &VulkanContext, command_data: &Command
 pub struct UniformBufferObject {
     pub view: Mat4,
     pub proj: Mat4,
+    pub screen_size: Vector2<u32>,
 }
 
 pub unsafe fn create_uniform_buffers(vulkan_context: &VulkanContext, pipeline_data: &PipelineData) -> Result<(Vec<vk::Buffer>, Vec<vk::DeviceMemory>)> {

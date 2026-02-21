@@ -3,6 +3,7 @@
 layout(binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
+    uvec2 screen_size;
 } ubo;
 
 layout(push_constant) uniform PushConstants {

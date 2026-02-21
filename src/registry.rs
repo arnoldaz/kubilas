@@ -5,10 +5,10 @@ use crate::{gpu_mesh::GpuMesh, texture::Texture};
 pub type TextureRegistry = Registry<Texture, TextureId>;
 pub type MeshRegistry = Registry<GpuMesh, MeshId>;
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct TextureId(pub usize);
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct MeshId(pub usize);
 
 pub struct Registry<T, Id> {

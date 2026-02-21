@@ -9,7 +9,7 @@ pub struct Bitmap {
 }
 
 impl Bitmap {
-    pub fn _new(pixels: Vec<u8>, width: u32, height: u32) -> Self {
+    pub fn new(pixels: Vec<u8>, width: u32, height: u32) -> Self {
         Self { pixels, width, height }
     }
 
@@ -37,4 +37,25 @@ impl Bitmap {
 
         Ok(Self { pixels, width, height })
     }
+
+    pub fn save_png(
+        path: &str,
+        width: u32,
+        height: u32,
+        pixels: &[u8], // RGBA8
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file = File::create(path)?;
+        let w = std::io::BufWriter::new(file);
+
+        let mut encoder = png::Encoder::new(w, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+
+        let mut writer = encoder.write_header()?;
+        writer.write_image_data(pixels)?;
+
+        Ok(())
+    }
+
 }
+

@@ -1,9 +1,9 @@
-use std::time::Instant;
-
+use std::{collections::HashMap, time::Instant};
+use anyhow::{anyhow};
 use cgmath::{Matrix4, Quaternion, Vector3};
 use vulkanalia::vk::{self, DeviceV1_0, DeviceV1_3, Handle, HasBuilder};
 use anyhow::{Result};
-use crate::{depth::DepthResources, pipeline::PipelineData, registry::{MeshRegistry, TextureRegistry}, scene::GpuEntity, swapchain::SwapchainData, vulkan_context::VulkanContext};
+use crate::{buffer::BufferAllocation, depth::DepthResources, pipeline::PipelineData, registry::{MeshRegistry, TextureId, TextureRegistry}, scene::GpuEntity, swapchain::SwapchainData, vertex::{UiVertex, Vertex}, vulkan_context::VulkanContext};
 
 pub struct CommandData {
     pub command_pool: vk::CommandPool,
@@ -80,7 +80,8 @@ impl CommandData {
     }
 
     pub unsafe fn update_command_buffer(&mut self, image_index: usize, vulkan_context: &VulkanContext, swapchain_data: &SwapchainData, depth_resources: &DepthResources, pipeline_data: &PipelineData, entities: &Vec<GpuEntity>,
-        mesh_registry: &MeshRegistry, _texture_registry: &TextureRegistry) -> Result<()> {
+        mesh_registry: &MeshRegistry, texture_registry: &TextureRegistry, clipped_primitives: Vec<egui::ClippedPrimitive>, ui_texture_id_map: HashMap<egui::TextureId, TextureId>,
+    ) -> Result<()> {
         let command_buffer = self.command_buffers[image_index];
 
         vulkan_context.device.reset_command_buffer(
@@ -204,7 +205,7 @@ impl CommandData {
                 &model as *const Matrix4<f32> as *const u8,
                 size_of::<Matrix4<f32>>()
             );
-
+            
             vulkan_context.device.cmd_push_constants(
                 command_buffer,
                 pipeline_data.pipeline_layout,
@@ -225,6 +226,69 @@ impl CommandData {
 
             vulkan_context.device.cmd_draw_indexed(command_buffer, mesh.index_count, 1, 0, 0, 0);
         }
+
+
+        vulkan_context.device.cmd_bind_pipeline(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline_data.ui_pipeline,
+        );
+
+        vulkan_context.device.cmd_bind_descriptor_sets(
+            command_buffer,
+            vk::PipelineBindPoint::GRAPHICS,
+            pipeline_data.ui_pipeline_layout,
+            0,
+            &[pipeline_data.descriptor_set],
+            &[],
+        );
+
+        // let mut vertex_base = 0;
+        // let mut index_base = 0;
+        for egui::ClippedPrimitive { clip_rect, primitive } in clipped_primitives {
+            let mesh = match primitive {
+                egui::epaint::Primitive::Mesh(mesh) => mesh,
+                egui::epaint::Primitive::Callback(_) => {
+                    return Err(anyhow!("`Primitive::Callback(_)` primitive not implemented"));
+                }
+            };
+            let (vertices, indices) = (
+                mesh.vertices
+                    .into_iter()
+                    .map(Into::into)
+                    .collect::<Vec<UiVertex>>(),
+                mesh.indices,
+            );
+            if vertices.is_empty() || indices.is_empty() {
+                continue;
+            }
+
+            let my_texture_id = ui_texture_id_map.get(&mesh.texture_id).unwrap();
+
+            let vertex_buffer = BufferAllocation::allocate_buffer(&vertices, vk::BufferUsageFlags::VERTEX_BUFFER, vulkan_context, self)?;
+            let index_buffer = BufferAllocation::allocate_buffer(&indices, vk::BufferUsageFlags::INDEX_BUFFER, vulkan_context, self)?;
+
+            vulkan_context.device.cmd_bind_vertex_buffers(command_buffer, 0, &[vertex_buffer.buffer], &[0]);
+            vulkan_context.device.cmd_bind_index_buffer(command_buffer, index_buffer.buffer, 0, vk::IndexType::UINT32);
+
+            let id = my_texture_id.0 as u32;
+            vulkan_context.device.cmd_push_constants(
+                command_buffer,
+                pipeline_data.ui_pipeline_layout,
+                vk::ShaderStageFlags::FRAGMENT,
+                64,
+                &id.to_ne_bytes(),
+            );
+
+            vulkan_context.device.cmd_draw_indexed(
+                command_buffer,
+                indices.len() as u32,
+                1,
+                0,
+                0,
+                0,
+            );
+        }      
 
         vulkan_context.device.cmd_end_rendering(command_buffer);
 
