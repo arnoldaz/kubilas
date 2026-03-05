@@ -80,8 +80,8 @@ impl CommandData {
     }
 
     pub unsafe fn update_command_buffer(&mut self, image_index: usize, vulkan_context: &VulkanContext, swapchain_data: &SwapchainData, depth_resources: &DepthResources, pipeline_data: &PipelineData, entities: &Vec<GpuEntity>,
-        mesh_registry: &MeshRegistry, texture_registry: &TextureRegistry, clipped_primitives: Vec<egui::ClippedPrimitive>, ui_texture_id_map: HashMap<egui::TextureId, TextureId>,
-    ) -> Result<()> {
+        mesh_registry: &MeshRegistry, texture_registry: &TextureRegistry, clipped_primitives: Vec<egui::ClippedPrimitive>, ui_texture_id_map: HashMap<egui::TextureId, TextureId>
+    ) -> Result<Vec<BufferAllocation>> {
         let command_buffer = self.command_buffers[image_index];
 
         vulkan_context.device.reset_command_buffer(
@@ -245,6 +245,9 @@ impl CommandData {
 
         // let mut vertex_base = 0;
         // let mut index_base = 0;
+
+        let mut buffers = Vec::<BufferAllocation>::new();
+
         for egui::ClippedPrimitive { clip_rect, primitive } in clipped_primitives {
             let mesh = match primitive {
                 egui::epaint::Primitive::Mesh(mesh) => mesh,
@@ -280,15 +283,11 @@ impl CommandData {
                 &id.to_ne_bytes(),
             );
 
-            vulkan_context.device.cmd_draw_indexed(
-                command_buffer,
-                indices.len() as u32,
-                1,
-                0,
-                0,
-                0,
-            );
-        }      
+            vulkan_context.device.cmd_draw_indexed(command_buffer, indices.len() as u32, 1, 0, 0, 0);
+
+            buffers.push(vertex_buffer);
+            buffers.push(index_buffer);
+        }
 
         vulkan_context.device.cmd_end_rendering(command_buffer);
 
@@ -314,7 +313,7 @@ impl CommandData {
 
         vulkan_context.device.end_command_buffer(command_buffer)?;
 
-        Ok(())
+        Ok(buffers)
     }
 
     pub fn trs_matrix(

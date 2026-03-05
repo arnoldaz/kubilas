@@ -1,5 +1,5 @@
 use vulkanalia::vk::{self, DeviceV1_0};
-use crate::{pipeline::PipelineData, swapchain::SwapchainData, vulkan::{create_sync_objects, create_uniform_buffers}, vulkan_context::VulkanContext};
+use crate::{buffer::BufferAllocation, pipeline::PipelineData, swapchain::SwapchainData, vulkan::{MAX_FRAMES_IN_FLIGHT, create_sync_objects, create_uniform_buffers}, vulkan_context::VulkanContext};
 use anyhow::{Result};
 
 
@@ -12,6 +12,8 @@ pub struct FrameData {
 
     pub uniform_buffers: Vec<vk::Buffer>,
     pub uniform_buffers_memory: Vec<vk::DeviceMemory>,
+
+    pub garbage_buffers: [Vec<BufferAllocation>; MAX_FRAMES_IN_FLIGHT],
 }
 
 impl FrameData {
@@ -19,7 +21,7 @@ impl FrameData {
         let (image_available_semaphores, render_finished_semaphores, in_flight_fences, images_in_flight) = create_sync_objects(vulkan_context, swapchain_data)?;
         let (uniform_buffers, uniform_buffers_memory) = create_uniform_buffers(vulkan_context, pipeline_data)?;
 
-        Ok(Self { image_available_semaphores, render_finished_semaphores, in_flight_fences, images_in_flight, uniform_buffers, uniform_buffers_memory })
+        Ok(Self { image_available_semaphores, render_finished_semaphores, in_flight_fences, images_in_flight, uniform_buffers, uniform_buffers_memory, garbage_buffers: [Vec::new(), Vec::new()] })
     }
 
     pub unsafe fn destroy(self, vulkan_context: &VulkanContext) {

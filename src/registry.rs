@@ -1,6 +1,5 @@
 use std::marker::PhantomData;
-
-use crate::{gpu_mesh::GpuMesh, texture::Texture};
+use crate::{gpu_mesh::GpuMesh, texture::Texture, vulkan_context::{VulkanContext}};
 
 pub type TextureRegistry = Registry<Texture, TextureId>;
 pub type MeshRegistry = Registry<GpuMesh, MeshId>;
@@ -11,12 +10,16 @@ pub struct TextureId(pub usize);
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct MeshId(pub usize);
 
-pub struct Registry<T, Id> {
+pub trait Destroy {
+    unsafe fn destroy(self, vulkan_context: &VulkanContext);
+}
+
+pub struct Registry<T, Id> where Id: From<usize>, T: Destroy {
     items: Vec<T>,
     item_id: PhantomData<Id>,
 }
 
-impl<T, Id> Registry<T, Id> where Id: From<usize> {
+impl<T, Id> Registry<T, Id> where Id: From<usize>, T: Destroy {
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -29,6 +32,12 @@ impl<T, Id> Registry<T, Id> where Id: From<usize> {
         self.items.push(item);
 
         Id::from(id)
+    }
+
+    pub fn delete(&mut self, id: Id, vulkan_context: &VulkanContext) where Id: Into<usize> {
+        let index: usize = id.into();
+        let item = self.items.remove(index);
+        unsafe { item.destroy(vulkan_context); }
     }
 
     pub fn get(&self, id: Id) -> &T where Id: Into<usize> {

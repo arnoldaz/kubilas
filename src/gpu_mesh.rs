@@ -1,8 +1,7 @@
 use vulkanalia::{vk};
 
-use crate::{buffer::BufferAllocation, command::CommandData, mesh::Mesh, vulkan_context::{VulkanContext}};
+use crate::{buffer::BufferAllocation, command::CommandData, mesh::Mesh, registry::Destroy, vulkan_context::VulkanContext};
 use anyhow::Result;
-
 
 pub struct GpuMesh {
     pub vertex_buffer: BufferAllocation,
@@ -17,8 +16,10 @@ impl GpuMesh {
     
         Ok( Self { vertex_buffer, index_buffer, index_count: mesh.indices.len() as u32 } )
     }
-    
-    pub unsafe fn destroy(self, vulkan_context: &VulkanContext) {
+}
+
+impl Destroy for GpuMesh {
+    unsafe fn destroy(self, vulkan_context: &VulkanContext) {
         self.vertex_buffer.destroy(vulkan_context);
         self.index_buffer.destroy(vulkan_context);
     }

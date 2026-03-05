@@ -38,16 +38,11 @@ impl Bitmap {
         Ok(Self { pixels, width, height })
     }
 
-    pub fn save_png(
-        path: &str,
-        width: u32,
-        height: u32,
-        pixels: &[u8], // RGBA8
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_png(path: &str, width: u32, height: u32,  pixels: &[u8]) -> Result<()> {
         let file = File::create(path)?;
-        let w = std::io::BufWriter::new(file);
+        let buffer_writer = std::io::BufWriter::new(file);
 
-        let mut encoder = png::Encoder::new(w, width, height);
+        let mut encoder = png::Encoder::new(buffer_writer, width, height);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
 

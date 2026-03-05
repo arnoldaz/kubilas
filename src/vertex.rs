@@ -61,7 +61,7 @@ impl From<egui::epaint::Vertex> for UiVertex {
 }
 
 impl UiVertex {
-    pub const fn new(position: Vector2<f32>, texture_coordinates: Vector2<f32>, color: Vector4<u8>) -> Self {
+    pub const fn _new(position: Vector2<f32>, texture_coordinates: Vector2<f32>, color: Vector4<u8>) -> Self {
         Self { position, texture_coordinates, color }
     }
 

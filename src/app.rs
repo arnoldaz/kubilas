@@ -16,7 +16,7 @@ use crate::frame_data::{FrameData};
 use crate::gpu_mesh::GpuMesh;
 use crate::mesh::Mesh;
 use crate::pipeline::PipelineData;
-use crate::registry::{MeshRegistry, TextureId, TextureRegistry};
+use crate::registry::{Destroy, MeshRegistry, TextureId, TextureRegistry};
 use crate::scene::{GpuEntity, Transform};
 use crate::swapchain::{SwapchainData};
 use crate::texture::{Texture};
@@ -193,6 +193,10 @@ impl App {
             true,
             u64::MAX,
         )?;
+
+        for buffer in self.frame_data.garbage_buffers[self.frame].drain(..) {
+            buffer.destroy(&self.vulkan_context);
+        }
     
         let result = self.vulkan_context.device.acquire_next_image_khr(
             self.swapchain_data.swapchain,
@@ -221,9 +225,11 @@ impl App {
 
         for (texture_id, image_delta) in self.textures_delta.set.clone() {
             if self.ui_texture_id_map.contains_key(&texture_id) {
+                println!("bad");
                 continue
             }
-
+            
+            // println!("good");
             match image_delta.image {
                 egui::epaint::image::ImageData::Color(image) => {
                     let [width, height] = image.size;
@@ -237,6 +243,11 @@ impl App {
 
                     let bitmap = Bitmap::new(bytes, width as u32, height as u32);
 
+                    if self.ui_texture_id_map.contains_key(&texture_id) {
+                        let my_id = *self.ui_texture_id_map.get(&texture_id).unwrap();
+                        let texture = self.texture_registry.get(my_id);
+                        self.texture_registry.delete(my_id, &self.vulkan_context);
+                    }
 
                     let texture = Texture::create_from_bitmap(&bitmap, &self.vulkan_context, &self.command_data, self.texture_sampler)?;
                     let id = self.texture_registry.add(texture);
@@ -262,7 +273,7 @@ impl App {
             }
         }
 
-        self.command_data.update_command_buffer(
+        let garbage_buffers = self.command_data.update_command_buffer(
             image_index,
             &self.vulkan_context,
             &self.swapchain_data,
@@ -274,6 +285,8 @@ impl App {
             self.clipped_primitives.clone(), // VERY BAD
             self.ui_texture_id_map.clone(),
         )?;
+        self.frame_data.garbage_buffers[self.frame].extend(garbage_buffers);
+
         self.update_uniform_buffer()?;
 
         let wait_semaphores = &[self.frame_data.image_available_semaphores[self.frame]];

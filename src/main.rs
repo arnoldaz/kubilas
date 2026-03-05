@@ -15,6 +15,7 @@ mod pipeline;
 mod command;
 mod depth;
 mod frame_data;
+mod widget_gallery;
 
 use std::time::{Instant};
 
@@ -28,6 +29,8 @@ use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{CursorGrabMode, Window, WindowAttributes, WindowId};
+
+use crate::widget_gallery::WidgetGallery;
 
 
 struct WindowHandler {
@@ -43,7 +46,7 @@ struct WindowHandler {
     frames: u32,
     camera_mode: bool,
 
-    my_string: String,
+    widget_gallery: WidgetGallery,
 }
 
 impl WindowHandler {
@@ -80,32 +83,115 @@ impl WindowHandler {
                         
                         let full_output = egui_ctx.run(raw_input, |ctx| {
                             // ctx.set_visuals_of(egui::Theme::Dark, egui::Visuals { window_fill: egui::Color32::RED, ..Default::default() });
-                            ctx.fonts_mut(|fonts| {
-                                let mut s = String::new();
-                                for c in 32u8..127u8 {
-                                    s.push(c as char);
-                                }
+                            
+                            let mut open = true;
+                            WidgetGallery::show(&mut self.widget_gallery, &ctx, &mut open);
 
-                                // Force layout (this triggers rasterization)
-                                fonts.layout_no_wrap(
-                                    s,
-                                    egui::FontId::proportional(14.0),
-                                    egui::Color32::WHITE,
-                                );
-                            });
+                            egui::Window::new("My Window")
+                                .id(egui::Id::new("my_window"))
+                                .resizable(true)
+                                .scroll([true, true])
+                                .show(&ctx, |ui| {
 
-                            egui::Window::new("Debug").show(ctx, |ui| {
-                                ui.label("Hello nigga dick");
-                                ui.label(egui::RichText::new("large liutauras cock").font(egui::FontId::proportional(40.0)));
-                                ui.label(egui::RichText::new("large dalius cock").font(egui::FontId::proportional(100.0)));
-                                let _ = ui.button("Click");
-                                let _ = ui.button("Click");
-                                let _ = ui.button("Click");
-                                let _ = ui.button("Click");
-                                let _ = ui.button("Click");
-                                let _ = ui.button("Click niggasjkdhjsakdhsakjdhaskjdhsakjdhjsad");
-                                let response = ui.add(egui::TextEdit::singleline(&mut self.my_string).font(egui::FontId::proportional(14.0)));
-                            });
+
+                                    // ui.label("Welcome to the widget gallery!");
+                                    // ui.end_row();
+
+                                    // use egui::special_emojis::GITHUB;
+                                    // ui.hyperlink_to(
+                                    //     format!("{GITHUB} egui on GitHub"),
+                                    //     "https://github.com/emilk/egui",
+                                    // );
+                                    // ui.end_row();
+
+                                    // ui.add(egui::TextEdit::singleline(&mut self.my_string).hint_text("Write something here"));
+                                    // ui.end_row();
+
+                                    // if ui.button("Click me!").clicked() {
+                                    //     self.my_bool = !self.my_bool;
+                                    // }
+                                    // ui.end_row();
+
+                                    // if ui.link("Click me!").clicked() {
+                                    //     self.my_bool = !self.my_bool;
+                                    // }
+                                    // ui.end_row();
+
+                                    // ui.checkbox(&mut self.my_bool, "Checkbox");
+                                    // ui.end_row();
+
+                                    // ui.horizontal(|ui| {
+                                    //     ui.radio_value(&mut self.my_enum, MyEnum::First, "First");
+                                    //     ui.radio_value(&mut self.my_enum, MyEnum::Second, "Second");
+                                    //     ui.radio_value(&mut self.my_enum, MyEnum::Third, "Third");
+                                    // });
+                                    // ui.end_row();
+
+                                    // ui.horizontal(|ui| {
+                                    //     ui.selectable_value(&mut self.my_enum, MyEnum::First, "First");
+                                    //     ui.selectable_value(&mut self.my_enum, MyEnum::Second, "Second");
+                                    //     ui.selectable_value(&mut self.my_enum, MyEnum::Third, "Third");
+                                    // });
+                                    // ui.end_row();
+
+
+                                    // egui::ComboBox::from_label("Take your pick")
+                                    //     .show_ui(ui, |ui| {
+                                    //         ui.selectable_value(&mut self.my_enum, MyEnum::First, "First");
+                                    //         ui.selectable_value(&mut self.my_enum, MyEnum::Second, "Second");
+                                    //         ui.selectable_value(&mut self.my_enum, MyEnum::Third, "Third");
+                                    //     });
+                                    // ui.end_row();
+
+                                    // ui.add(egui::Slider::new(&mut self.my_float, 0.0..=360.0).suffix("°"));
+                                    // ui.end_row();
+
+                                    // ui.add(egui::DragValue::new(&mut self.my_float).speed(1.0));
+                                    // ui.end_row();
+
+                                    // let progress = self.my_float / 360.0;
+                                    // let progress_bar = egui::ProgressBar::new(progress as f32)
+                                    //     .show_percentage()
+                                    //     .animate(self.my_bool);
+                                    // self.my_bool = ui
+                                    //     .add(progress_bar)
+                                    //     .on_hover_text("The progress bar can be animated!")
+                                    //     .hovered();
+                                    // ui.end_row();
+
+                                    // ui.color_edit_button_srgba(&mut self.my_color);
+                                    // ui.end_row();
+
+                                    // let egui_icon = egui::include_image!("icon.png");
+                                    // ui.add(egui::Image::new(egui_icon.clone()));
+                                    // ui.end_row();
+                                    // if ui
+                                    //     .add(egui::Button::image_and_text(egui_icon, "Click me!"))
+                                    //     .clicked()
+                                    // {
+                                    //     self.my_bool = !self.my_bool;
+                                    // }
+                                    // ui.end_row();
+
+                                    // ui.separator();
+                                    // ui.end_row();
+
+                                    // ui.collapsing("Click to see what is hidden!", |ui| {
+                                    //     ui.horizontal_wrapped(|ui| {
+                                    //         ui.spacing_mut().item_spacing.x = 0.0;
+                                    //         ui.label("It's a ");
+    
+                                    //         ui.add_space(4.0);
+                                    //         ui.add(egui::Spinner::new());
+                                    //     });
+                                    // });
+                                    // ui.end_row();
+
+
+                                });
+                        
+
+                        
                         });
 
                         egui_state.handle_platform_output(
@@ -113,20 +199,13 @@ impl WindowHandler {
                             full_output.platform_output,
                         );
 
-                        // let clipped_primitives = egui_ctx.tessellate(full_output.shapes, self.window.as_ref().unwrap().scale_factor() as f32);
                         let clipped_primitives = egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
                         app.clipped_primitives = clipped_primitives;    
                         let textures_delta = full_output.textures_delta;
                         app.textures_delta = textures_delta;
-                        // println!("suck a nigga dick, {} {}", app.textures_delta.set.len(), app.textures_delta.free.len());
-                        // for (id, delta) in &full_output.textures_delta.set {
-                        //     self.egui_renderer.upload_texture(*id, delta);
-                        // }
-
-                        // for x in clipped_primitives {
-                        //     println!("{}", x.clip_rect);
-                        // }
-                        // app.set_egui_data(clipped_primitives, full_output.textures_delta);
+                        if app.textures_delta.set.len() > 0 || app.textures_delta.free.len() > 0 {
+                            println!("suck a nigga dick, {} {}", app.textures_delta.set.len(), app.textures_delta.free.len());
+                        }
 
                         // Render app
                         unsafe { app.render(window) }.expect("Rendering failed");
@@ -268,6 +347,19 @@ impl ApplicationHandler for WindowHandler {
             None,
         );
 
+        // let mut fonts = egui::FontDefinitions::default();
+
+        // fonts.font_data.insert(
+        //     "noto".into(),
+        //     std::sync::Arc::new(egui::FontData::from_static(include_bytes!("NotoSans-Regular.ttf"))),
+        // );
+
+        // fonts.families.get_mut(&egui::FontFamily::Proportional)
+        //     .unwrap()
+        //     .insert(0, "noto".into());
+
+        // egui_ctx.set_fonts(fonts);
+
         self.egui_ctx = Some(egui_ctx);
         self.egui_state = Some(egui_state);
 
@@ -295,7 +387,18 @@ fn main() -> Result<()> {
         .init();
 
     let event_loop = EventLoop::new()?;
-    let mut window_handler = WindowHandler { window: None, app: None, egui_ctx: None, egui_state: None, minimized: false, last_frame_time: Instant::now(), frames: 0, camera_mode: false, last_fps_time: Instant::now(), my_string: String::new() };
+    let mut window_handler = WindowHandler {
+        window: None,
+        app: None,
+        egui_ctx: None,
+        egui_state: None,
+        minimized: false,
+        last_frame_time: Instant::now(),
+        frames: 0,
+        camera_mode: false,
+        last_fps_time: Instant::now(),
+        widget_gallery: Default::default(),
+    };
     event_loop.run_app(&mut window_handler)?;
 
     Ok(())

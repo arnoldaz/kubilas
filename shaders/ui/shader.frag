@@ -15,4 +15,5 @@ layout(location = 0) out vec4 outColor;
 void main() {
     vec4 color = texture(texSampler[nonuniformEXT(pcs.textureId)], v_uv);
     outColor = color * v_color;
+    outColor = vec4(color.rgb * v_color.rgb, 1.0);
 }

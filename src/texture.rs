@@ -3,6 +3,7 @@ use vulkanalia::prelude::v1_0::*;
 
 use crate::bitmap::Bitmap;
 use crate::command::CommandData;
+use crate::registry::Destroy;
 use crate::vulkan::{copy_buffer_to_image, create_buffer, create_image, create_image_view, transition_image_layout};
 use crate::vulkan_context::{VulkanContext};
 
@@ -19,12 +20,6 @@ pub struct Texture {
 impl Texture {
     pub fn _new(image: vk::Image, image_memory: vk::DeviceMemory, image_view: vk::ImageView, sampler: vk::Sampler) -> Self {
         Self { image, image_memory, image_view, _sampler: sampler }
-    }
-
-    pub unsafe fn destroy(self, vulkan_context: &VulkanContext) {
-        vulkan_context.device.destroy_image_view(self.image_view, None);
-        vulkan_context.device.destroy_image(self.image, None);
-        vulkan_context.device.free_memory(self.image_memory, None);
     }
 
     pub unsafe fn create_from_bitmap(bitmap: &Bitmap, vulkan_context: &VulkanContext, command_data: &CommandData, sampler: vk::Sampler) -> Result<Self> {
@@ -101,5 +96,12 @@ impl Texture {
 
         Ok( Self { image: texture_image, image_memory: texture_image_memory, image_view: texture_image_view, _sampler: sampler } )
     }
+}
 
+impl Destroy for Texture {
+    unsafe fn destroy(self, vulkan_context: &VulkanContext) {
+        vulkan_context.device.destroy_image_view(self.image_view, None);
+        vulkan_context.device.destroy_image(self.image, None);
+        vulkan_context.device.free_memory(self.image_memory, None);
+    }
 }
