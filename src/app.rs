@@ -324,7 +324,13 @@ impl App {
         Ok(())
     }
 
-    pub unsafe fn destroy(self) {
+    pub unsafe fn destroy(mut self) {
+        for garbage_buffer in &mut self.frame_data.garbage_buffers {
+            for buffer in garbage_buffer.drain(..) {
+                buffer.destroy(&self.vulkan_context);
+            }
+        }
+
         for mesh in self.mesh_registry.into_items() {
             mesh.destroy(&self.vulkan_context);
         }

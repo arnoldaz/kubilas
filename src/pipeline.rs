@@ -30,6 +30,8 @@ impl PipelineData {
         vulkan_context.device.destroy_descriptor_pool(self.descriptor_pool, None);
         vulkan_context.device.destroy_pipeline(self.pipeline, None);
         vulkan_context.device.destroy_pipeline_layout(self.pipeline_layout, None);
+        vulkan_context.device.destroy_pipeline(self.ui_pipeline, None);
+        vulkan_context.device.destroy_pipeline_layout(self.ui_pipeline_layout, None);
         vulkan_context.device.destroy_descriptor_set_layout(self.descriptor_set_layout, None);
     }
 
