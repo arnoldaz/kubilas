@@ -230,7 +230,7 @@ impl PipelineData {
             .polygon_mode(vk::PolygonMode::FILL)
             .line_width(1.0)
             .cull_mode(vk::CullModeFlags::NONE)
-            .front_face(vk::FrontFace::CLOCKWISE)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
             .depth_bias_enable(false);
 
         let multisample_state = vk::PipelineMultisampleStateCreateInfo::builder()
@@ -240,23 +240,43 @@ impl PipelineData {
         let depth_stencil_state = vk::PipelineDepthStencilStateCreateInfo::builder()
             .depth_test_enable(false)
             .depth_write_enable(false)
-            .depth_compare_op(vk::CompareOp::ALWAYS);
+            .depth_compare_op(vk::CompareOp::ALWAYS)
+            .stencil_test_enable(false)
+            .front(vk::StencilOpState {
+                compare_op: vk::CompareOp::ALWAYS,
+                fail_op: vk::StencilOp::KEEP,
+                pass_op: vk::StencilOp::KEEP,
+                ..Default::default()
+            })
+            .back(vk::StencilOpState {
+                compare_op: vk::CompareOp::ALWAYS,
+                fail_op: vk::StencilOp::KEEP,
+                pass_op: vk::StencilOp::KEEP,
+                ..Default::default()
+            });
+
             // .depth_bounds_test_enable(false)
             // .stencil_test_enable(false);
+
+        // let attachment = vk::PipelineColorBlendAttachmentState::builder()
+        //     .color_write_mask(vk::ColorComponentFlags::all())
+        //     .blend_enable(true)
+        //     .src_color_blend_factor(vk::BlendFactor::ONE)
+        //     .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        //     .src_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_DST_ALPHA)
+        //     .dst_alpha_blend_factor(vk::BlendFactor::ONE);
 
         let attachment = vk::PipelineColorBlendAttachmentState::builder()
             .color_write_mask(vk::ColorComponentFlags::all())
             .blend_enable(true)
-            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-            .color_blend_op(vk::BlendOp::ADD);
+            .src_color_blend_factor(vk::BlendFactor::ONE)
+            .dst_color_blend_factor(
+                vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+            );
 
         let attachments = &[attachment];
         let color_blend_state = vk::PipelineColorBlendStateCreateInfo::builder()
-            .logic_op_enable(false)
-            .logic_op(vk::LogicOp::COPY)
-            .attachments(attachments)
-            .blend_constants([0.0, 0.0, 0.0, 0.0]);
+            .attachments(attachments);
 
         let vert_push_constant_range = vk::PushConstantRange::builder()
             .stage_flags(vk::ShaderStageFlags::VERTEX)

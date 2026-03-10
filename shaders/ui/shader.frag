@@ -13,7 +13,6 @@ layout(push_constant) uniform PushConstants {
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    vec4 color = texture(texSampler[nonuniformEXT(pcs.textureId)], v_uv);
-    outColor = color * v_color;
-    outColor = vec4(color.rgb * v_color.rgb, 1.0);
+    vec4 tex = texture(texSampler[nonuniformEXT(pcs.textureId)], v_uv);
+    outColor = v_color * tex;
 }

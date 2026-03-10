@@ -283,6 +283,56 @@ impl CommandData {
                 &id.to_ne_bytes(),
             );
 
+            let (width, height) = (swapchain_data.swapchain_extent.width, swapchain_data.swapchain_extent.height);
+
+            let min = clip_rect.min;
+            let min = egui::Pos2 {
+                x: min.x * 1.0 as f32,
+                y: min.y * 1.0 as f32,
+            };
+            let min = egui::Pos2 {
+                x: f32::clamp(min.x, 0.0, width as f32),
+                y: f32::clamp(min.y, 0.0, height as f32),
+            };
+            let max = clip_rect.max;
+            let max = egui::Pos2 {
+                x: max.x * 1.0 as f32,
+                y: max.y * 1.0 as f32,
+            };
+            let max = egui::Pos2 {
+                x: f32::clamp(max.x, min.x, width as f32),
+                y: f32::clamp(max.y, min.y, height as f32),
+            };
+            vulkan_context.device.cmd_set_scissor(
+                command_buffer,
+                0,
+                std::slice::from_ref(
+                    &vk::Rect2D::builder()
+                        .offset(vk::Offset2D {
+                            x: min.x.round() as i32,
+                            y: min.y.round() as i32,
+                        })
+                        .extent(vk::Extent2D {
+                            width: (max.x.round() - min.x) as u32,
+                            height: (max.y.round() - min.y) as u32,
+                        })
+                        .build()
+                ),
+            );
+            vulkan_context.device.cmd_set_viewport(
+                command_buffer,
+                0,
+                std::slice::from_ref(
+                    &vk::Viewport::builder()
+                        .x(0.0)
+                        .y(0.0)
+                        .width(width as f32)
+                        .height(height as f32)
+                        .min_depth(0.0)
+                        .max_depth(1.0),
+                ),
+            );
+
             vulkan_context.device.cmd_draw_indexed(command_buffer, indices.len() as u32, 1, 0, 0, 0);
 
             buffers.push(vertex_buffer);

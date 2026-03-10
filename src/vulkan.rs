@@ -166,6 +166,33 @@ pub unsafe fn create_image(vulkan_context: &VulkanContext, width: u32, height: u
     Ok((image, image_memory))
 }
 
+pub unsafe fn create_image_ui(vulkan_context: &VulkanContext, width: u32, height: u32, format: vk::Format, tiling: vk::ImageTiling, usage: vk::ImageUsageFlags, properties: vk::MemoryPropertyFlags, extent: vk::Extent3D) -> Result<(vk::Image, vk::DeviceMemory)> {
+    let info = vk::ImageCreateInfo::builder()
+        .image_type(vk::ImageType::_2D)
+        .extent(extent)
+        .mip_levels(1)
+        .array_layers(1)
+        .format(format)
+        .tiling(tiling)
+        .initial_layout(vk::ImageLayout::UNDEFINED)
+        .usage(usage)
+        .samples(vk::SampleCountFlags::_1)
+        .sharing_mode(vk::SharingMode::EXCLUSIVE);
+
+    let image = vulkan_context.device.create_image(&info, None)?;
+
+    let requirements = vulkan_context.device.get_image_memory_requirements(image);
+    let info = vk::MemoryAllocateInfo::builder()
+        .allocation_size(requirements.size)
+        .memory_type_index(get_memory_type_index(vulkan_context, properties, requirements)?);
+
+    let image_memory = vulkan_context.device.allocate_memory(&info, None)?;
+
+    vulkan_context.device.bind_image_memory(image, image_memory, 0)?;
+
+    Ok((image, image_memory))
+}
+
 pub unsafe fn get_memory_type_index(vulkan_context: &VulkanContext, properties: vk::MemoryPropertyFlags, requirements: vk::MemoryRequirements) -> Result<u32> {
     let memory = vulkan_context.instance.get_physical_device_memory_properties(vulkan_context.physical_device);
 
@@ -176,6 +203,42 @@ pub unsafe fn get_memory_type_index(vulkan_context: &VulkanContext, properties: 
             suitable && memory_type.property_flags.contains(properties)
         })
         .ok_or_else(|| anyhow!("Failed to find suitable memory type."))
+}
+
+pub unsafe fn insert_image_memory_barrier(
+    device: &vulkanalia::Device,
+    cmd: vk::CommandBuffer,
+    image: vk::Image,
+    src_q_family_index: u32,
+    dst_q_family_index: u32,
+    src_access_mask: vk::AccessFlags,
+    dst_access_mask: vk::AccessFlags,
+    old_layout: vk::ImageLayout,
+    new_layout: vk::ImageLayout,
+    src_stage_mask: vk::PipelineStageFlags,
+    dst_stage_mask: vk::PipelineStageFlags,
+    subresource_range: vk::ImageSubresourceRange,
+) {
+    let barrier = vk::ImageMemoryBarrier::builder()
+        .src_queue_family_index(src_q_family_index)
+        .dst_queue_family_index(dst_q_family_index)
+        .src_access_mask(src_access_mask)
+        .dst_access_mask(dst_access_mask)
+        .old_layout(old_layout)
+        .new_layout(new_layout)
+        .image(image)
+        .subresource_range(subresource_range)
+        .build();
+
+    device.cmd_pipeline_barrier(
+        cmd,
+        src_stage_mask,
+        dst_stage_mask,
+        vk::DependencyFlags::BY_REGION,
+        &[] as &[vk::MemoryBarrier],
+        &[] as &[vk::BufferMemoryBarrier],
+        &[barrier],
+    );
 }
 
 pub unsafe fn transition_image_layout(vulkan_context: &VulkanContext, command_data: &CommandData, image: vk::Image, format: vk::Format, old_layout: vk::ImageLayout, new_layout: vk::ImageLayout) -> Result<()> {
@@ -202,6 +265,18 @@ pub unsafe fn transition_image_layout(vulkan_context: &VulkanContext, command_da
             vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE,
             vk::PipelineStageFlags::TOP_OF_PIPE,
             vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS,
+        ),
+        (vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL) => (
+            vk::AccessFlags::SHADER_READ,
+            vk::AccessFlags::TRANSFER_READ,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::PipelineStageFlags::TRANSFER,
+        ),
+        (vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL, vk::ImageLayout::TRANSFER_DST_OPTIMAL) => (
+            vk::AccessFlags::SHADER_READ,
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::PipelineStageFlags::FRAGMENT_SHADER,
+            vk::PipelineStageFlags::TRANSFER,
         ),
         _ => return Err(anyhow!("Unsupported image layout transition!")),
     };
@@ -299,6 +374,23 @@ pub unsafe fn create_texture_sampler(vulkan_context: &VulkanContext) -> Result<v
         .mip_lod_bias(0.0)
         .min_lod(0.0)
         .max_lod(0.0);
+        
+    let texture_sampler = vulkan_context.device.create_sampler(&info, None)?;
+
+    Ok(texture_sampler)
+}
+
+pub unsafe fn create_texture_sampler_ui(vulkan_context: &VulkanContext) -> Result<vk::Sampler> {
+    let info = vk::SamplerCreateInfo::builder()
+        .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+        .anisotropy_enable(false)
+        .min_filter(vk::Filter::LINEAR)
+        .mag_filter(vk::Filter::LINEAR)
+        .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
+        .min_lod(0.0)
+        .max_lod(vk::LOD_CLAMP_NONE);
         
     let texture_sampler = vulkan_context.device.create_sampler(&info, None)?;
 

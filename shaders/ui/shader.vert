@@ -23,5 +23,5 @@ void main() {
             2.0 * a_pos.y / ubo.screen_size.y - 1.0, 0.0, 1.0);
 
     v_uv = a_uv;
-    v_color = a_color;
+    v_color = vec4(pow(a_color.rgb, vec3(2.2)), a_color.a);
 }
