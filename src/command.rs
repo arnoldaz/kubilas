@@ -200,27 +200,24 @@ impl CommandData {
             new_rotation.y *= time;
             let new_quaternion = Quaternion::from(new_rotation);
             let model = Self::trs_matrix(gpu_entity.transform.translation, new_quaternion, gpu_entity.transform.scale);
+
+            let mut push_constants = [0u8; 68];
+
             let model_bytes = std::slice::from_raw_parts(
                 &model as *const Matrix4<f32> as *const u8,
                 size_of::<Matrix4<f32>>()
             );
-            
-            vulkan_context.device.cmd_push_constants(
-                command_buffer,
-                pipeline_data.pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
-                0,
-                model_bytes,
-            );
+            push_constants[0..64].copy_from_slice(model_bytes);
 
             let id = gpu_entity.texture_id.0 as u32;
-            // let obj_index_bytes = std::slice::from_raw_parts(&id as *const u32 as *const u8, 4);
+            push_constants[64..68].copy_from_slice(&id.to_ne_bytes());
+
             vulkan_context.device.cmd_push_constants(
                 command_buffer,
                 pipeline_data.pipeline_layout,
-                vk::ShaderStageFlags::FRAGMENT,
-                64, // offset vertex push constants
-                &id.to_ne_bytes(),
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
+                &push_constants,
             );
 
             vulkan_context.device.cmd_draw_indexed(command_buffer, mesh.index_count, 1, 0, 0, 0);

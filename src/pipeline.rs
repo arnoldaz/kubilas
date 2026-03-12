@@ -68,20 +68,17 @@ impl PipelineData {
     }
 
     unsafe fn create_pipeline(descriptor_set_layout: vk::DescriptorSetLayout, vulkan_context: &VulkanContext, swapchain_data: &SwapchainData, depth_resources: &DepthResources) -> Result<(vk::Pipeline, vk::PipelineLayout)> {
-        let vert = include_bytes!("../target/shaders/main/vert.spv");
-        let frag = include_bytes!("../target/shaders/main/frag.spv");
-
-        let vert_shader_module = Self::create_shader_module(vulkan_context, &vert[..])?;
-        let frag_shader_module = Self::create_shader_module(vulkan_context, &frag[..])?;
+        let shader = include_bytes!("../target/shaders/main.spv");
+        let shader_module = Self::create_shader_module(vulkan_context, &shader[..])?;
 
         let vert_stage = vk::PipelineShaderStageCreateInfo::builder()
             .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vert_shader_module)
+            .module(shader_module)
             .name(b"main\0");
 
         let frag_stage = vk::PipelineShaderStageCreateInfo::builder()
             .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(frag_shader_module)
+            .module(shader_module)
             .name(b"main\0");
 
         let binding_descriptions = &[Vertex::binding_description()];
@@ -140,18 +137,13 @@ impl PipelineData {
             .attachments(attachments)
             .blend_constants([0.0, 0.0, 0.0, 0.0]);
 
-        let vert_push_constant_range = vk::PushConstantRange::builder()
-            .stage_flags(vk::ShaderStageFlags::VERTEX)
+        let combined_push_constant_range = vk::PushConstantRange::builder()
+            .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
             .offset(0)
-            .size(64 /* 16 × 4 byte floats */);
-
-        let frag_range = vk::PushConstantRange::builder()
-            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
-            .offset(64) // offset after vertex constants
-            .size(4);
+            .size(68 /* 16 × 4 byte floats + int */);
 
         let set_layouts = &[descriptor_set_layout];
-        let push_constant_ranges = &[vert_push_constant_range, frag_range];
+        let push_constant_ranges = &[combined_push_constant_range];
         let layout_info = vk::PipelineLayoutCreateInfo::builder()
             .set_layouts(set_layouts)
             .push_constant_ranges(push_constant_ranges);
@@ -184,8 +176,7 @@ impl PipelineData {
 
         let pipeline = vulkan_context.device.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None)?.0[0];
 
-        vulkan_context.device.destroy_shader_module(vert_shader_module, None);
-        vulkan_context.device.destroy_shader_module(frag_shader_module, None);
+        vulkan_context.device.destroy_shader_module(shader_module, None);
 
         Ok((pipeline, pipeline_layout))
     }

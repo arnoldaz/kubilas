@@ -141,9 +141,9 @@ impl App {
         // let mut rng = rand::rng();
         // let mut transforms = Vec::<Transform>::new();
         // for _ in 0..10000 {
-        //     let random_x: f32 = rng.random_range(-100.0..100.0);
-        //     let random_y: f32 = rng.random_range(-100.0..100.0);
-        //     let random_z: f32 = rng.random_range(-100.0..100.0);
+        //     let random_x: f32 = rand::Rng::random_range(&mut rng, -100.0..100.0);
+        //     let random_y: f32 = rand::Rng::random_range(&mut rng, -100.0..100.0);
+        //     let random_z: f32 = rand::Rng::random_range(&mut rng, -100.0..100.0);
 
         //     let translation = Vector3 { x: random_x, y: random_y, z: random_z };
         //     transforms.push(Transform::new(translation, rotation, scale));

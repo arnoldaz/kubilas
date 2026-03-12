@@ -75,11 +75,11 @@ impl WindowHandler {
                             let mut open = true;
                             WidgetGallery::show(&mut self.widget_gallery, &context, &mut open);
 
-                            egui::Window::new("My Window")
-                                .id(egui::Id::new("my_window"))
-                                .resizable(true)
-                                .scroll([true, true])
-                                .show(&context, |_| {});
+                            // egui::Window::new("My Window")
+                            //     .id(egui::Id::new("my_window"))
+                            //     .resizable(true)
+                            //     .scroll([true, true])
+                            //     .show(&context, |_| {});
                         });
 
                         // Render app
