@@ -109,19 +109,8 @@ impl VulkanContext {
         let mut layer_settings_create_info = vk::LayerSettingsCreateInfoEXT::builder()
             .settings(&layer_settings_vec);
 
-        let gpuav_enable: [u32; 1] = [1];
-        let gpuav_settings = vk::LayerSettingEXT::builder()
-            .layer_name(b"VK_LAYER_KHRONOS_validation\0")
-            .setting_name(b"gpuav_enable\0")
-            .values_bool32(&gpuav_enable);
-
-        let gpuav_settings_vec = [gpuav_settings];
-        let mut gpuav_settings_create_info = vk::LayerSettingsCreateInfoEXT::builder()
-            .settings(&gpuav_settings_vec);
-
         if Self::VALIDATION_ENABLED {
             info = info.push_next(&mut layer_settings_create_info);
-            info = info.push_next(&mut gpuav_settings_create_info);
             info = info.push_next(&mut debug_info);
         }
 
@@ -223,8 +212,7 @@ impl VulkanContext {
             .descriptor_binding_variable_descriptor_count(true)
             .shader_sampled_image_array_non_uniform_indexing(true)
             .shader_storage_buffer_array_non_uniform_indexing(true)
-            .shader_uniform_buffer_array_non_uniform_indexing(true)
-            .descriptor_indexing(true);
+            .shader_uniform_buffer_array_non_uniform_indexing(true);
 
         let mut features13 = vk::PhysicalDeviceVulkan13Features::builder()
             .dynamic_rendering(true)
