@@ -34,7 +34,7 @@ impl<T, Id> Registry<T, Id> where Id: From<usize>, T: Destroy {
         Id::from(id)
     }
 
-    pub fn delete(&mut self, id: Id, vulkan_context: &VulkanContext) where Id: Into<usize> {
+    pub fn _delete(&mut self, id: Id, vulkan_context: &VulkanContext) where Id: Into<usize> {
         let index: usize = id.into();
         let item = self.items.remove(index);
         unsafe { item.destroy(vulkan_context); }

@@ -10,7 +10,7 @@ use vulkanalia::vk::{DeviceV1_0, EntryV1_0, ExtDebugUtilsExtensionInstanceComman
 use vulkanalia_vma::{self as vma};
 
 pub struct VulkanContext {
-    pub _entry: Entry,
+    _entry: Entry,
     pub instance: Instance,
     pub device: Device,
     

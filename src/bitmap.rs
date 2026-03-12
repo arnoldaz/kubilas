@@ -38,7 +38,7 @@ impl Bitmap {
         Ok(Self { pixels, width, height })
     }
 
-    pub fn save_png(path: &str, width: u32, height: u32,  pixels: &[u8]) -> Result<()> {
+    pub fn _save_png(path: &str, width: u32, height: u32, pixels: &[u8]) -> Result<()> {
         let file = File::create(path)?;
         let buffer_writer = std::io::BufWriter::new(file);
 
@@ -51,6 +51,5 @@ impl Bitmap {
 
         Ok(())
     }
-
 }
 

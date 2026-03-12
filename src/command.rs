@@ -1,9 +1,8 @@
-use std::{collections::HashMap, time::Instant};
-use anyhow::{anyhow};
+use std::{time::Instant};
 use cgmath::{Matrix4, Quaternion, Vector3};
 use vulkanalia::vk::{self, DeviceV1_0, DeviceV1_3, Handle, HasBuilder};
 use anyhow::{Result};
-use crate::{buffer::BufferAllocation, depth::DepthResources, pipeline::PipelineData, registry::{MeshRegistry, TextureId, TextureRegistry}, scene::GpuEntity, swapchain::SwapchainData, vertex::{UiVertex, Vertex}, vulkan_context::VulkanContext};
+use crate::{buffer::BufferAllocation, depth::DepthResources, pipeline::PipelineData, registry::{MeshRegistry}, scene::GpuEntity, swapchain::SwapchainData, ui::Ui, vulkan_context::VulkanContext};
 
 pub struct CommandData {
     pub command_pool: vk::CommandPool,
@@ -80,7 +79,7 @@ impl CommandData {
     }
 
     pub unsafe fn update_command_buffer(&mut self, image_index: usize, vulkan_context: &VulkanContext, swapchain_data: &SwapchainData, depth_resources: &DepthResources, pipeline_data: &PipelineData, entities: &Vec<GpuEntity>,
-        mesh_registry: &MeshRegistry, texture_registry: &TextureRegistry, clipped_primitives: Vec<egui::ClippedPrimitive>, ui_texture_id_map: HashMap<egui::TextureId, TextureId>
+        mesh_registry: &MeshRegistry, ui: &mut Ui
     ) -> Result<Vec<BufferAllocation>> {
         let command_buffer = self.command_buffers[image_index];
 
@@ -227,117 +226,8 @@ impl CommandData {
             vulkan_context.device.cmd_draw_indexed(command_buffer, mesh.index_count, 1, 0, 0, 0);
         }
 
-
-        vulkan_context.device.cmd_bind_pipeline(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            pipeline_data.ui_pipeline,
-        );
-
-        vulkan_context.device.cmd_bind_descriptor_sets(
-            command_buffer,
-            vk::PipelineBindPoint::GRAPHICS,
-            pipeline_data.ui_pipeline_layout,
-            0,
-            &[pipeline_data.descriptor_set],
-            &[],
-        );
-
-        // let mut vertex_base = 0;
-        // let mut index_base = 0;
-
-        let mut buffers = Vec::<BufferAllocation>::new();
-
-        for egui::ClippedPrimitive { clip_rect, primitive } in clipped_primitives {
-            let mesh = match primitive {
-                egui::epaint::Primitive::Mesh(mesh) => mesh,
-                egui::epaint::Primitive::Callback(_) => {
-                    return Err(anyhow!("`Primitive::Callback(_)` primitive not implemented"));
-                }
-            };
-            let (vertices, indices) = (
-                mesh.vertices
-                    .into_iter()
-                    .map(Into::into)
-                    .collect::<Vec<UiVertex>>(),
-                mesh.indices,
-            );
-            if vertices.is_empty() || indices.is_empty() {
-                continue;
-            }
-
-            let my_texture_id = ui_texture_id_map.get(&mesh.texture_id).unwrap();
-
-            let vertex_buffer = BufferAllocation::allocate_buffer(&vertices, vk::BufferUsageFlags::VERTEX_BUFFER, vulkan_context, self)?;
-            let index_buffer = BufferAllocation::allocate_buffer(&indices, vk::BufferUsageFlags::INDEX_BUFFER, vulkan_context, self)?;
-
-            vulkan_context.device.cmd_bind_vertex_buffers(command_buffer, 0, &[vertex_buffer.buffer], &[0]);
-            vulkan_context.device.cmd_bind_index_buffer(command_buffer, index_buffer.buffer, 0, vk::IndexType::UINT32);
-
-            let id = my_texture_id.0 as u32;
-            vulkan_context.device.cmd_push_constants(
-                command_buffer,
-                pipeline_data.ui_pipeline_layout,
-                vk::ShaderStageFlags::FRAGMENT,
-                64,
-                &id.to_ne_bytes(),
-            );
-
-            let (width, height) = (swapchain_data.swapchain_extent.width, swapchain_data.swapchain_extent.height);
-
-            let min = clip_rect.min;
-            let min = egui::Pos2 {
-                x: min.x * 1.0 as f32,
-                y: min.y * 1.0 as f32,
-            };
-            let min = egui::Pos2 {
-                x: f32::clamp(min.x, 0.0, width as f32),
-                y: f32::clamp(min.y, 0.0, height as f32),
-            };
-            let max = clip_rect.max;
-            let max = egui::Pos2 {
-                x: max.x * 1.0 as f32,
-                y: max.y * 1.0 as f32,
-            };
-            let max = egui::Pos2 {
-                x: f32::clamp(max.x, min.x, width as f32),
-                y: f32::clamp(max.y, min.y, height as f32),
-            };
-            vulkan_context.device.cmd_set_scissor(
-                command_buffer,
-                0,
-                std::slice::from_ref(
-                    &vk::Rect2D::builder()
-                        .offset(vk::Offset2D {
-                            x: min.x.round() as i32,
-                            y: min.y.round() as i32,
-                        })
-                        .extent(vk::Extent2D {
-                            width: (max.x.round() - min.x) as u32,
-                            height: (max.y.round() - min.y) as u32,
-                        })
-                        .build()
-                ),
-            );
-            vulkan_context.device.cmd_set_viewport(
-                command_buffer,
-                0,
-                std::slice::from_ref(
-                    &vk::Viewport::builder()
-                        .x(0.0)
-                        .y(0.0)
-                        .width(width as f32)
-                        .height(height as f32)
-                        .min_depth(0.0)
-                        .max_depth(1.0),
-                ),
-            );
-
-            vulkan_context.device.cmd_draw_indexed(command_buffer, indices.len() as u32, 1, 0, 0, 0);
-
-            buffers.push(vertex_buffer);
-            buffers.push(index_buffer);
-        }
+        let (width, height) = (swapchain_data.swapchain_extent.width, swapchain_data.swapchain_extent.height);
+        let buffers = ui.bind_and_draw(width, height, vulkan_context, self, pipeline_data, command_buffer)?;
 
         vulkan_context.device.cmd_end_rendering(command_buffer);
 

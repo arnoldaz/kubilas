@@ -80,5 +80,4 @@ impl BufferAllocation {
 
         Ok( Self { buffer, allocation })
     }
-
 }

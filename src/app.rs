@@ -1,11 +1,13 @@
 use anyhow::{anyhow, Result};
+use egui::Context;
+use winit::event::WindowEvent;
 use winit::window::Window;
 
 use vulkanalia::prelude::v1_0::*;
 use vulkanalia::vk::{KhrSwapchainExtensionDeviceCommands};
 
-use std::collections::HashMap;
 use std::mem::{self, size_of};
+use std::sync::Arc;
 use cgmath::{Deg, Euler, Rad, Vector3, point3, vec2};
 
 use crate::bitmap::Bitmap;
@@ -20,8 +22,9 @@ use crate::registry::{Destroy, MeshRegistry, TextureId, TextureRegistry};
 use crate::scene::{GpuEntity, Transform};
 use crate::swapchain::{SwapchainData};
 use crate::texture::{Texture};
+use crate::ui::Ui;
 use crate::vulkan_context::VulkanContext;
-use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_texture_sampler, create_texture_sampler_ui, insert_image_memory_barrier, transition_image_layout};
+use crate::vulkan::{MAX_FRAMES_IN_FLIGHT, UniformBufferObject, create_texture_sampler, create_texture_sampler_ui};
 
 use std::ptr::copy_nonoverlapping as memcpy;
 
@@ -32,6 +35,9 @@ pub struct App {
     pub depth_resources: DepthResources,
     pub pipeline_data: PipelineData,
     pub frame_data: FrameData,
+    pub ui: Ui,
+
+    // TODO: move samplers to some new struct
     pub texture_sampler: vk::Sampler,
     pub texture_sampler_ui: vk::Sampler,
     
@@ -45,20 +51,18 @@ pub struct App {
     pub camera: Camera,
     pub projection: Projection,
     pub camera_movement: CameraMovement,
-
-    pub clipped_primitives: Vec<egui::ClippedPrimitive>,
-    pub textures_delta: egui::TexturesDelta,
-    pub ui_texture_id_map: HashMap<egui::TextureId, TextureId>,
 }
 
 impl App {
-    pub unsafe fn create(window: &Window) -> Result<Self> {
-        let vulkan_context = VulkanContext::new(window)?;
-        let swapchain_data = SwapchainData::new(window, &vulkan_context)?;
+    pub unsafe fn create(window: Arc<Window>) -> Result<Self> {
+        let vulkan_context = VulkanContext::new(&window)?;
+        let swapchain_data = SwapchainData::new(&window, &vulkan_context)?;
         let command_data = CommandData::new(&vulkan_context, &swapchain_data)?;
         let depth_resources = DepthResources::new(&vulkan_context, &swapchain_data, &command_data)?;
         let pipeline_data = PipelineData::new(&vulkan_context, &swapchain_data, &depth_resources)?;
         let frame_data = FrameData::new(&vulkan_context, &swapchain_data, &pipeline_data)?;
+        let ui = Ui::new(window);
+
         let texture_sampler = create_texture_sampler(&vulkan_context)?;
         let texture_sampler_ui = create_texture_sampler_ui(&vulkan_context)?;
 
@@ -174,6 +178,7 @@ impl App {
             depth_resources,
             pipeline_data,
             frame_data,
+            ui,
             texture_sampler,
             texture_sampler_ui,
             frame: 0,
@@ -184,18 +189,11 @@ impl App {
             camera,
             projection,
             camera_movement,
-            clipped_primitives: Vec::new(),
-            textures_delta: Default::default(),
-            ui_texture_id_map: Default::default(),
         })
     }
 
     pub unsafe fn render(&mut self, window: &Window) -> Result<()> {
-        self.vulkan_context.device.wait_for_fences(
-            &[self.frame_data.in_flight_fences[self.frame]],
-            true,
-            u64::MAX,
-        )?;
+        self.vulkan_context.device.wait_for_fences(&[self.frame_data.in_flight_fences[self.frame]], true, u64::MAX)?;
 
         for buffer in self.frame_data.garbage_buffers[self.frame].drain(..) {
             buffer.destroy(&self.vulkan_context);
@@ -214,196 +212,13 @@ impl App {
             Err(e) => return Err(anyhow!(e)),
         };
 
-        // println!("{} img index. {} len self.data.render_finished_semaphores. {} frame", image_index, self.data.render_finished_semaphores.len(), self.frame);
-
-        if !self.frame_data.images_in_flight[image_index as usize].is_null() {
-            self.vulkan_context.device.wait_for_fences(
-                &[self.frame_data.images_in_flight[image_index as usize]],
-                true,
-                u64::MAX,
-            )?;
+        if !self.frame_data.images_in_flight[image_index].is_null() {
+            self.vulkan_context.device.wait_for_fences(&[self.frame_data.images_in_flight[image_index]], true, u64::MAX)?;
         }
     
-        self.frame_data.images_in_flight[image_index as usize] = self.frame_data.in_flight_fences[self.frame];
+        self.frame_data.images_in_flight[image_index] = self.frame_data.in_flight_fences[self.frame];
 
-        for (texture_id, image_delta) in self.textures_delta.set.clone() {
-            // if self.ui_texture_id_map.contains_key(&texture_id) {
-            //     println!("bad");
-            //     continue
-            // }
-            
-            // println!("good");
-            match image_delta.image {
-                egui::epaint::image::ImageData::Color(image) => {
-                    let [width, height] = image.size;
-                    let bytes = image.pixels
-                        .clone()
-                        .into_iter()
-                        .flat_map(|c| [c.r(), c.g(), c.b(), c.a()])
-                        .collect::<Vec<u8>>();
-
-                    let _ = Bitmap::save_png("D:\\test.png", width as u32, height as u32, &bytes.clone());
-
-                    let bitmap = Bitmap::new(bytes, width as u32, height as u32);
-                    
-                    if let Some(pos) = image_delta.pos {
-                        let extent = vk::Extent3D::builder()
-                            .width(image.width() as u32)
-                            .height(image.height() as u32)
-                            .depth(1)
-                            .build();
-
-                        let texture = Texture::create_from_bitmap_ui(&bitmap, &self.vulkan_context, &self.command_data, self.texture_sampler_ui, extent)?;
-                        let my_id = *self.ui_texture_id_map.get(&texture_id).unwrap();
-                        let existing_texture = self.texture_registry.get(my_id);
-
-                        let cmd = self.command_data.begin_single_time_commands(&self.vulkan_context)?;
-
-                        insert_image_memory_barrier(
-                            &self.vulkan_context.device,
-                            cmd,
-                            existing_texture.image,
-                            vk::QUEUE_FAMILY_IGNORED,
-                            vk::QUEUE_FAMILY_IGNORED,
-                            vk::AccessFlags::SHADER_READ,
-                            vk::AccessFlags::TRANSFER_WRITE,
-                            vk::ImageLayout::UNDEFINED,
-                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                            vk::PipelineStageFlags::FRAGMENT_SHADER,
-                            vk::PipelineStageFlags::TRANSFER,
-                            vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            },
-                        );
-
-                        insert_image_memory_barrier(
-                            &self.vulkan_context.device,
-                            cmd,
-                            texture.image,
-                            vk::QUEUE_FAMILY_IGNORED,
-                            vk::QUEUE_FAMILY_IGNORED,
-                            vk::AccessFlags::SHADER_READ,
-                            vk::AccessFlags::TRANSFER_READ,
-                            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                            vk::PipelineStageFlags::FRAGMENT_SHADER,
-                            vk::PipelineStageFlags::TRANSFER,
-                            vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            },
-                        );
-
-                        let top_left = vk::Offset3D {
-                            x: pos[0] as i32,
-                            y: pos[1] as i32,
-                            z: 0,
-                        };
-                        let bottom_right = vk::Offset3D {
-                            x: pos[0] as i32 + image.width() as i32,
-                            y: pos[1] as i32 + image.height() as i32,
-                            z: 1,
-                        };
-
-                        let region = vk::ImageBlit {
-                            src_subresource: vk::ImageSubresourceLayers {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                mip_level: 0,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            },
-                            src_offsets: [
-                                vk::Offset3D { x: 0, y: 0, z: 0 },
-                                vk::Offset3D {
-                                    x: extent.width as i32,
-                                    y: extent.height as i32,
-                                    z: extent.depth as i32,
-                                },
-                            ],
-                            dst_subresource: vk::ImageSubresourceLayers {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                mip_level: 0,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            },
-                            dst_offsets: [top_left, bottom_right],
-                        };
-
-                        self.vulkan_context.device.cmd_blit_image(
-                            cmd,
-                            texture.image,
-                            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                            existing_texture.image,
-                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                            &[region],
-                            vk::Filter::NEAREST,
-                        );
-
-                        // Transition existing image for shader read
-                        insert_image_memory_barrier(
-                            &self.vulkan_context.device,
-                            cmd,
-                            existing_texture.image,
-                            vk::QUEUE_FAMILY_IGNORED,
-                            vk::QUEUE_FAMILY_IGNORED,
-                            vk::AccessFlags::TRANSFER_WRITE,
-                            vk::AccessFlags::SHADER_READ,
-                            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                            vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
-                            vk::PipelineStageFlags::TRANSFER,
-                            vk::PipelineStageFlags::FRAGMENT_SHADER,
-                            vk::ImageSubresourceRange {
-                                aspect_mask: vk::ImageAspectFlags::COLOR,
-                                base_mip_level: 0,
-                                level_count: 1,
-                                base_array_layer: 0,
-                                layer_count: 1,
-                            },
-                        );
-
-                        self.command_data.end_single_time_commands(cmd, &self.vulkan_context)?;
-
-                        // self.texture_registry.delete(my_id, &self.vulkan_context);
-                        texture.destroy(&self.vulkan_context);
-                        continue
-                    }
-
-                    let extent = vk::Extent3D::builder()
-                        .width(image.width() as u32)
-                        .height(image.height() as u32)
-                        .depth(1)
-                        .build();
-
-                    let texture = Texture::create_from_bitmap_ui(&bitmap, &self.vulkan_context, &self.command_data, self.texture_sampler_ui, extent)?;
-                    let id = self.texture_registry.add(texture);
-                    println!("{}ajskldh sajk", id.0);
-                    self.ui_texture_id_map.insert(texture_id, id);
-
-                    let saved_texture = self.texture_registry.get(id);
-                    let image_info = vk::DescriptorImageInfo::builder()
-                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
-                        .image_view(saved_texture.image_view)
-                        .sampler(self.texture_sampler_ui);
-
-                    let image_infos = &[image_info];
-                    let sampler_write = vk::WriteDescriptorSet::builder()
-                        .dst_set(self.pipeline_data.descriptor_set)
-                        .dst_binding(1)
-                        .dst_array_element(id.0 as u32)
-                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                        .image_info(image_infos);
-
-                    self.vulkan_context.device.update_descriptor_sets(&[sampler_write], &[] as &[vk::CopyDescriptorSet]);
-                }
-            }
-        }
+        self.ui.update_textures(&self.vulkan_context, &self.command_data, &self.pipeline_data, &mut self.texture_registry, self.texture_sampler_ui)?;
 
         let garbage_buffers = self.command_data.update_command_buffer(
             image_index,
@@ -413,9 +228,7 @@ impl App {
             &self.pipeline_data,
             &self.gpu_entities,
             &self.mesh_registry,
-            &self.texture_registry,
-            self.clipped_primitives.clone(), // VERY BAD
-            self.ui_texture_id_map.clone(),
+            &mut self.ui,
         )?;
         self.frame_data.garbage_buffers[self.frame].extend(garbage_buffers);
 
@@ -482,7 +295,15 @@ impl App {
         self.vulkan_context.destroy();
     }
 
-    pub unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
+    pub fn is_ui_consumed(&mut self, window_event: &WindowEvent) -> bool {
+        self.ui.is_consumed(window_event)
+    }
+
+    pub fn run_ui_frame(&mut self, ui_creation_callback: impl FnMut(&Context)) {
+        self.ui.run_frame(ui_creation_callback);
+    }
+
+    unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()> {
         self.vulkan_context.device.device_wait_idle()?;
 
         let old_swapchain = mem::take(&mut self.swapchain_data);

@@ -16,7 +16,9 @@ mod command;
 mod depth;
 mod frame_data;
 mod widget_gallery;
+mod ui;
 
+use std::sync::Arc;
 use std::time::{Instant};
 
 use app::App;
@@ -32,13 +34,9 @@ use winit::window::{CursorGrabMode, Window, WindowAttributes, WindowId};
 
 use crate::widget_gallery::WidgetGallery;
 
-
 struct WindowHandler {
-    window: Option<Window>,
+    window: Option<Arc<Window>>,
     app: Option<App>,
-
-    egui_ctx: Option<egui::Context>,
-    egui_state: Option<egui_winit::State>,
 
     minimized: bool,
     last_frame_time: Instant,
@@ -51,7 +49,7 @@ struct WindowHandler {
 
 impl WindowHandler {
     fn handle_event(&mut self, event_loop: &ActiveEventLoop, event: Event<()>) {
-        let (window, app) = match (&self.window, &mut self.app) {
+        let (window, app) = match (self.window.as_ref(), self.app.as_mut()) {
             (Some(w), Some(a)) => (w, a),
             _ => return,
         };
@@ -61,9 +59,7 @@ impl WindowHandler {
                 window.request_redraw();
             },
             Event::WindowEvent { event: window_event, .. } => {
-                let egui_state = self.egui_state.as_mut().unwrap();
-
-                if egui_state.on_window_event(window, &window_event).consumed {
+                if app.is_ui_consumed(&window_event) {
                     return;
                 }
 
@@ -74,141 +70,20 @@ impl WindowHandler {
                         self.last_frame_time = Instant::now();
                         app.camera.update(&app.camera_movement, delta_time);
 
-                        // Test UI
-                        let egui_ctx = self.egui_ctx.as_ref().unwrap();
-                        let egui_state = self.egui_state.as_mut().unwrap();
-
-                        let raw_input = egui_state.take_egui_input(window);
-
-                        
-                        let full_output = egui_ctx.run(raw_input, |ctx| {
-                            // ctx.set_visuals_of(egui::Theme::Dark, egui::Visuals { window_fill: egui::Color32::RED, ..Default::default() });
-                            
+                        // UI
+                        app.run_ui_frame(|context| {
                             let mut open = true;
-                            WidgetGallery::show(&mut self.widget_gallery, &ctx, &mut open);
+                            WidgetGallery::show(&mut self.widget_gallery, &context, &mut open);
 
                             egui::Window::new("My Window")
                                 .id(egui::Id::new("my_window"))
                                 .resizable(true)
                                 .scroll([true, true])
-                                .show(&ctx, |ui| {
-
-
-                                    // ui.label("Welcome to the widget gallery!");
-                                    // ui.end_row();
-
-                                    // use egui::special_emojis::GITHUB;
-                                    // ui.hyperlink_to(
-                                    //     format!("{GITHUB} egui on GitHub"),
-                                    //     "https://github.com/emilk/egui",
-                                    // );
-                                    // ui.end_row();
-
-                                    // ui.add(egui::TextEdit::singleline(&mut self.my_string).hint_text("Write something here"));
-                                    // ui.end_row();
-
-                                    // if ui.button("Click me!").clicked() {
-                                    //     self.my_bool = !self.my_bool;
-                                    // }
-                                    // ui.end_row();
-
-                                    // if ui.link("Click me!").clicked() {
-                                    //     self.my_bool = !self.my_bool;
-                                    // }
-                                    // ui.end_row();
-
-                                    // ui.checkbox(&mut self.my_bool, "Checkbox");
-                                    // ui.end_row();
-
-                                    // ui.horizontal(|ui| {
-                                    //     ui.radio_value(&mut self.my_enum, MyEnum::First, "First");
-                                    //     ui.radio_value(&mut self.my_enum, MyEnum::Second, "Second");
-                                    //     ui.radio_value(&mut self.my_enum, MyEnum::Third, "Third");
-                                    // });
-                                    // ui.end_row();
-
-                                    // ui.horizontal(|ui| {
-                                    //     ui.selectable_value(&mut self.my_enum, MyEnum::First, "First");
-                                    //     ui.selectable_value(&mut self.my_enum, MyEnum::Second, "Second");
-                                    //     ui.selectable_value(&mut self.my_enum, MyEnum::Third, "Third");
-                                    // });
-                                    // ui.end_row();
-
-
-                                    // egui::ComboBox::from_label("Take your pick")
-                                    //     .show_ui(ui, |ui| {
-                                    //         ui.selectable_value(&mut self.my_enum, MyEnum::First, "First");
-                                    //         ui.selectable_value(&mut self.my_enum, MyEnum::Second, "Second");
-                                    //         ui.selectable_value(&mut self.my_enum, MyEnum::Third, "Third");
-                                    //     });
-                                    // ui.end_row();
-
-                                    // ui.add(egui::Slider::new(&mut self.my_float, 0.0..=360.0).suffix("°"));
-                                    // ui.end_row();
-
-                                    // ui.add(egui::DragValue::new(&mut self.my_float).speed(1.0));
-                                    // ui.end_row();
-
-                                    // let progress = self.my_float / 360.0;
-                                    // let progress_bar = egui::ProgressBar::new(progress as f32)
-                                    //     .show_percentage()
-                                    //     .animate(self.my_bool);
-                                    // self.my_bool = ui
-                                    //     .add(progress_bar)
-                                    //     .on_hover_text("The progress bar can be animated!")
-                                    //     .hovered();
-                                    // ui.end_row();
-
-                                    // ui.color_edit_button_srgba(&mut self.my_color);
-                                    // ui.end_row();
-
-                                    // let egui_icon = egui::include_image!("icon.png");
-                                    // ui.add(egui::Image::new(egui_icon.clone()));
-                                    // ui.end_row();
-                                    // if ui
-                                    //     .add(egui::Button::image_and_text(egui_icon, "Click me!"))
-                                    //     .clicked()
-                                    // {
-                                    //     self.my_bool = !self.my_bool;
-                                    // }
-                                    // ui.end_row();
-
-                                    // ui.separator();
-                                    // ui.end_row();
-
-                                    // ui.collapsing("Click to see what is hidden!", |ui| {
-                                    //     ui.horizontal_wrapped(|ui| {
-                                    //         ui.spacing_mut().item_spacing.x = 0.0;
-                                    //         ui.label("It's a ");
-    
-                                    //         ui.add_space(4.0);
-                                    //         ui.add(egui::Spinner::new());
-                                    //     });
-                                    // });
-                                    // ui.end_row();
-
-
-                                });
-                        
-
-                        
+                                .show(&context, |_| {});
                         });
 
-                        egui_state.handle_platform_output(
-                            window,
-                            full_output.platform_output,
-                        );
-
-                        let clipped_primitives = egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
-                        app.clipped_primitives = clipped_primitives;    
-                        let textures_delta = full_output.textures_delta;
-                        app.textures_delta = textures_delta;
-                        if app.textures_delta.set.len() > 0 || app.textures_delta.free.len() > 0 {
-                            println!("suck a nigga dick, {} {}", app.textures_delta.set.len(), app.textures_delta.free.len());
-                        }
-
                         // Render app
-                        unsafe { app.render(window) }.expect("Rendering failed");
+                        unsafe { app.render(&window) }.expect("Rendering failed");
     
                         // Reset mouse movement to not continuously move every frame
                         app.camera_movement.rotate_horizontal = 0.0;
@@ -304,11 +179,11 @@ impl WindowHandler {
                         } else {
                             self.minimized = false;
                             app.resized = true;
-                            unsafe { app.render(window) }.unwrap();
+                            unsafe { app.render(&window) }.unwrap();
                         }
                     },
                     WindowEvent::Moved(_) if !event_loop.exiting() && !self.minimized => {
-                        unsafe { app.render(window) }.unwrap();
+                        unsafe { app.render(&window) }.unwrap();
                     },
                     _ => {}
                 }
@@ -334,34 +209,10 @@ impl ApplicationHandler for WindowHandler {
             )
             .expect("Failed to create window");
 
-        let app = unsafe { App::create(&window) }
+        let window = Arc::new(window);
+
+        let app = unsafe { App::create(window.clone()) }
             .expect("Failed to create app");
-
-        let egui_ctx = egui::Context::default();
-        let egui_state = egui_winit::State::new(
-            egui_ctx.clone(),
-            egui::ViewportId::ROOT,
-            &window,
-            None,
-            None,
-            None,
-        );
-
-        // let mut fonts = egui::FontDefinitions::default();
-
-        // fonts.font_data.insert(
-        //     "noto".into(),
-        //     std::sync::Arc::new(egui::FontData::from_static(include_bytes!("NotoSans-Regular.ttf"))),
-        // );
-
-        // fonts.families.get_mut(&egui::FontFamily::Proportional)
-        //     .unwrap()
-        //     .insert(0, "noto".into());
-
-        // egui_ctx.set_fonts(fonts);
-
-        self.egui_ctx = Some(egui_ctx);
-        self.egui_state = Some(egui_state);
 
         self.window = Some(window);
         self.app = Some(app);
@@ -381,24 +232,29 @@ impl ApplicationHandler for WindowHandler {
     }
 }
 
+impl Default for WindowHandler {
+    fn default() -> Self {
+        let now = Instant::now();
+        Self {
+            window: None,
+            app: None,
+            minimized: false,
+            last_frame_time: now,
+            last_fps_time: now,
+            frames: 0,
+            camera_mode: false,
+            widget_gallery: Default::default(),
+        }
+    }
+}
+
 fn main() -> Result<()> {
     pretty_env_logger::formatted_builder()
         .filter_level(log::LevelFilter::Info)
         .init();
 
     let event_loop = EventLoop::new()?;
-    let mut window_handler = WindowHandler {
-        window: None,
-        app: None,
-        egui_ctx: None,
-        egui_state: None,
-        minimized: false,
-        last_frame_time: Instant::now(),
-        frames: 0,
-        camera_mode: false,
-        last_fps_time: Instant::now(),
-        widget_gallery: Default::default(),
-    };
+    let mut window_handler = WindowHandler::default();
     event_loop.run_app(&mut window_handler)?;
 
     Ok(())
