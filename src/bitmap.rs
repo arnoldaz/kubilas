@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::{fs::File, io::BufReader};
 use png::{ColorType, Decoder};
 use anyhow::Result;
 
@@ -23,7 +23,8 @@ impl Bitmap {
 
     pub fn create_from_file(image_name: &str) -> Result<Self> {
         let image = File::open(image_name)?;
-        let decoder = Decoder::new(image);
+        let reader = BufReader::new(image);
+        let decoder = Decoder::new(reader);
         let mut reader = decoder.read_info()?;
 
         let mut pixels = vec![0; reader.info().raw_bytes()];
