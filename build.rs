@@ -13,8 +13,7 @@ fn main() {
     for entry in fs::read_dir(shader_source_directory).unwrap() {
         let path = entry.unwrap().path();
         if path.extension().and_then(|s| s.to_str()) == Some("slang") {
-            println!("cargo::rerun-if-changed={}", path.display());
-
+            println!("cargo:rerun-if-changed={}", path.display());
             println!("cargo::warning=shader: {}", path.display());
             let filename = path.file_stem().unwrap().to_str().unwrap();
             let out = shader_output_directory.join(format!("{}.spv", filename));

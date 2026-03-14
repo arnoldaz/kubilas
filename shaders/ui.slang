@@ -10,29 +10,30 @@ ConstantBuffer<UniformBufferObject> ubo;
 Sampler2D textureSampler[];
 
 struct PushConstants {
-    float4x4 model;
     uint textureId;
 };
 
 struct VSInput {
-    float3 position;
-    float3 color;
+    float2 position;
+    float4 color;
     float2 uv;
 };
 
 struct VSOutput {
     float4 position : SV_POSITION;
-    float3 color;
+    float4 color;
     float2 uv;
 };
 
 [shader("vertex")]
-VSOutput main(VSInput input, uniform PushConstants pc) {
+VSOutput main(VSInput input) {
     VSOutput output;
 
-    float4 pos = float4(input.position, 1.0);
-    output.position = mul(ubo.proj, mul(ubo.view, mul(pc.model, pos)));
-    output.color = input.color;
+    float x = 2.0 * input.position.x / ubo.screen_size.x - 1.0;
+    float y = 2.0 * input.position.y / ubo.screen_size.y - 1.0;
+    output.position = float4(x, y, 0.0, 1.0);
+    float3 gamma = pow(input.color.rgb, float3(2.2, 2.2, 2.2));
+    output.color = float4(gamma, input.color.a);
     output.uv = input.uv;
 
     return output;
@@ -41,7 +42,7 @@ VSOutput main(VSInput input, uniform PushConstants pc) {
 [shader("fragment")]
 float4 main(VSOutput input, uniform PushConstants pc) {
     uint id = NonUniformResourceIndex(pc.textureId);
-    float3 textureColor = textureSampler[id].Sample(input.uv).rgb;
+    float4 textureColor = textureSampler[id].Sample(input.uv);
 
-    return float4(input.color * textureColor, 1.0);
+    return input.color * textureColor;
 }

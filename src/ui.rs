@@ -134,8 +134,8 @@ impl Ui {
             vulkan_context.device.cmd_push_constants(
                 command_buffer,
                 pipeline_data.ui_pipeline_layout,
-                vk::ShaderStageFlags::FRAGMENT,
-                64,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
+                0,
                 &id.to_ne_bytes(),
             );
 

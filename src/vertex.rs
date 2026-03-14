@@ -46,23 +46,23 @@ impl From<egui::epaint::Vertex> for Vertex {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct UiVertex {
     pub position: Vector2<f32>,
-    pub texture_coordinates: Vector2<f32>,
     pub color: Vector4<u8>,
+    pub texture_coordinates: Vector2<f32>,
 }
 
 impl From<egui::epaint::Vertex> for UiVertex {
     fn from(value: egui::epaint::Vertex) -> Self {
         Self {
             position: vec2(value.pos.x, value.pos.y),
-            texture_coordinates: vec2(value.uv.x, value.uv.y),
             color: vec4(value.color[0], value.color[1], value.color[2], value.color[3]),
+            texture_coordinates: vec2(value.uv.x, value.uv.y),
         }
     }
 }
 
 impl UiVertex {
-    pub const fn _new(position: Vector2<f32>, texture_coordinates: Vector2<f32>, color: Vector4<u8>) -> Self {
-        Self { position, texture_coordinates, color }
+    pub const fn _new(position: Vector2<f32>, color: Vector4<u8>, texture_coordinates: Vector2<f32>) -> Self {
+        Self { position, color, texture_coordinates }
     }
 
     pub fn binding_description() -> vk::VertexInputBindingDescription {
@@ -74,7 +74,7 @@ impl UiVertex {
     }
 
     pub fn attribute_descriptions() -> [vk::VertexInputAttributeDescription; 3] {
-        let pos = vk::VertexInputAttributeDescription::builder()
+        let position = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(0)
             .format(vk::Format::R32G32_SFLOAT)
@@ -84,18 +84,18 @@ impl UiVertex {
         let color = vk::VertexInputAttributeDescription::builder()
             .binding(0)
             .location(1)
-            .format(vk::Format::R32G32_SFLOAT)
-            .offset(offset_of!(UiVertex, texture_coordinates) as u32)
-            .build();
-
-        let tex_coord = vk::VertexInputAttributeDescription::builder()
-            .binding(0)
-            .location(2)
             .format(vk::Format::R8G8B8A8_UNORM)
             .offset(offset_of!(UiVertex, color) as u32)
             .build();
 
-        [pos, color, tex_coord]
+        let texture_coordinates = vk::VertexInputAttributeDescription::builder()
+            .binding(0)
+            .location(2)
+            .format(vk::Format::R32G32_SFLOAT)
+            .offset(offset_of!(UiVertex, texture_coordinates) as u32)
+            .build();
+
+        [position, color, texture_coordinates]
     }
 }
 
