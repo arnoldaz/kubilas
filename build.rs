@@ -5,7 +5,8 @@ use std::process::Command;
 use std::time::SystemTime;
 
 fn main() {
-    let root_string = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let root_string = env::var("CARGO_MANIFEST_DIR")
+        .expect("CARGO_MANIFEST_DIR should always be set by cargo");
     let root = Path::new(&root_string);
 
     let shader_source_directory = root.join("shaders");
@@ -37,7 +38,7 @@ fn main() {
             continue;
         }
 
-        println!("cargo:rerun-if-changed={}", path.display());
+        println!("cargo::rerun-if-changed={}", path.display());
 
         let shader_file_name = match path.file_name() {
             Some(name) => name,
