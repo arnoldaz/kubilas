@@ -102,6 +102,7 @@ pub unsafe fn create_uniform_buffers(vulkan_context: &VulkanContext, pipeline_da
             .offset(0)
             .range(size_of::<UniformBufferObject>() as u64);
 
+        // TODO: I don't even know how to fix this, it seems I have MAX_FRAMES_IN_FLIGHT amount of ubo objects but only use one in shader, need to somehow only bind buffer just to first one
         let buffer_info = &[info];
         let ubo_write = vk::WriteDescriptorSet::builder()
             .dst_set(pipeline_data.descriptor_set)
