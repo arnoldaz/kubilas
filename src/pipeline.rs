@@ -1,6 +1,6 @@
 use anyhow::{Result};
 use vulkanalia::{bytecode::Bytecode, vk::{self, DeviceV1_0, Handle, HasBuilder}};
-use crate::{depth::DepthResources, swapchain::SwapchainData, vertex::{UiVertex, Vertex}, vulkan_context::VulkanContext};
+use crate::{depth::DepthResources, swapchain::SwapchainData, vertex::{UiVertex, Vertex}, vulkan::MAX_FRAMES_IN_FLIGHT, vulkan_context::VulkanContext};
 
 pub struct PipelineData {
     pub descriptor_set_layout: vk::DescriptorSetLayout,
@@ -39,7 +39,7 @@ impl PipelineData {
         let ubo_binding = vk::DescriptorSetLayoutBinding::builder()
             .binding(0)
             .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-            .descriptor_count(65536)
+            .descriptor_count(MAX_FRAMES_IN_FLIGHT as u32)
             .stage_flags(vk::ShaderStageFlags::VERTEX);
 
         let sampler_binding = vk::DescriptorSetLayoutBinding::builder()
@@ -51,7 +51,7 @@ impl PipelineData {
         let bindings = &[ubo_binding, sampler_binding];
 
         let binding_flags = &[
-            vk::DescriptorBindingFlags::PARTIALLY_BOUND | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND,
+            vk::DescriptorBindingFlags::empty(),
             vk::DescriptorBindingFlags::PARTIALLY_BOUND | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND
         ];
         let mut binding_flags_info = vk::DescriptorSetLayoutBindingFlagsCreateInfo::builder()
