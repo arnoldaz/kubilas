@@ -17,6 +17,7 @@ mod depth;
 mod frame_data;
 mod widget_gallery;
 mod ui;
+mod gltf;
 
 use std::sync::Arc;
 use std::time::{Instant};

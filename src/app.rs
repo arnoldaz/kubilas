@@ -15,6 +15,7 @@ use crate::camera::{Camera, CameraMovement, Projection};
 use crate::command::CommandData;
 use crate::depth::DepthResources;
 use crate::frame_data::{FrameData};
+use crate::gltf::Gltf;
 use crate::gpu_mesh::GpuMesh;
 use crate::mesh::Mesh;
 use crate::pipeline::PipelineData;
@@ -91,6 +92,8 @@ impl App {
         let teapot_bitmap = Bitmap::create_from_file("assets/viking_room.png")?;
         let white_bitmap = Bitmap::white();
 
+        let (gltf_mesh, gltf_bitmap) = Gltf::load()?;
+
         let rotation = Euler { x: Rad(0.0), y: Rad(std::f32::consts::FRAC_PI_2), z: Rad(0.0) };
         let scale = Vector3 { x: 1.0, y: 1.0, z: 1.0 };
 
@@ -99,12 +102,14 @@ impl App {
         let translation3 = Vector3 { x: -7.0, y: 0.0, z: 0.0 };
         let translation4 = Vector3 { x: -10.0, y: 0.0, z: 0.0 };
         let translation5 = Vector3 { x: 15.0, y: 0.0, z: 10.0 };
+        let translation6 = Vector3 { x: 3.0, y: 10.0, z: 0.0 };
 
         let transform1 = Transform::new(translation1, rotation, scale);
         let transform2 = Transform::new(translation2, rotation, scale);
         let transform3 = Transform::new(translation3, rotation, scale);
         let transform4 = Transform::new(translation4, rotation, scale);
         let transform5 = Transform::new(translation5, rotation, scale);
+        let transform6 = Transform::new(translation6, rotation, scale);
 
         // GPU side
         let cube_gpu_mesh = GpuMesh::create_from_mesh(&cube_mesh, &vulkan_context, &command_data)?;
@@ -112,6 +117,7 @@ impl App {
         let sphere_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_sphere(), &vulkan_context, &command_data)?;
         let generated_cube_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_cube(), &vulkan_context, &command_data)?;
         let tetrahedron_gpu_mesh = GpuMesh::create_from_mesh(&Mesh::default_tetrahedron(), &vulkan_context, &command_data)?;
+        let gltf_gpu_mesh = GpuMesh::create_from_mesh(&gltf_mesh, &vulkan_context, &command_data)?;
 
         let mut mesh_registry = MeshRegistry::new();
         let cube_mesh_id = mesh_registry.add(cube_gpu_mesh);
@@ -119,15 +125,18 @@ impl App {
         let sphere_mesh_id = mesh_registry.add(sphere_gpu_mesh);
         let generated_cube_mesh_id = mesh_registry.add(generated_cube_gpu_mesh);
         let tetrahedron_mesh_id = mesh_registry.add(tetrahedron_gpu_mesh);
+        let gltf_mesh_id = mesh_registry.add(gltf_gpu_mesh);
 
         let cube_texture = Texture::create_from_bitmap(&cube_bitmap, &vulkan_context, &command_data, texture_sampler)?;
         let teapot_texture = Texture::create_from_bitmap(&teapot_bitmap, &vulkan_context, &command_data, texture_sampler)?;
         let white_texture = Texture::create_from_bitmap(&white_bitmap, &vulkan_context, &command_data, texture_sampler)?;
+        let gltf_texture = Texture::create_from_bitmap(&gltf_bitmap, &vulkan_context, &command_data, texture_sampler)?;
 
         let mut texture_registry = TextureRegistry::new();
         let cube_texture_id = texture_registry.add(cube_texture);
         let teapot_texture_id = texture_registry.add(teapot_texture);
         let white_texture_id = texture_registry.add(white_texture);
+        let gltf_texture_id = texture_registry.add(gltf_texture);
 
         // Entities
         let entity1 = GpuEntity::new(cube_mesh_id, cube_texture_id, transform1);
@@ -135,8 +144,9 @@ impl App {
         let entity3 = GpuEntity::new(sphere_mesh_id, white_texture_id, transform3);
         let entity4 = GpuEntity::new(generated_cube_mesh_id, white_texture_id, transform4);
         let entity5 = GpuEntity::new(tetrahedron_mesh_id, white_texture_id, transform5);
+        let entity6 = GpuEntity::new(gltf_mesh_id, gltf_texture_id, transform6);
 
-        let entities = vec![entity1, entity2, entity3, entity4, entity5];
+        let entities = vec![entity1, entity2, entity3, entity4, entity5, entity6];
 
         // let mut rng = rand::rng();
         // let mut transforms = Vec::<Transform>::new();

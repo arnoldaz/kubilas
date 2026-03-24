@@ -9,7 +9,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn _new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
         Self { vertices, indices }
     }
 
