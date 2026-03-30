@@ -197,7 +197,7 @@ impl CommandData {
             vulkan_context.device.cmd_bind_index_buffer(command_buffer, mesh.index_buffer.buffer, 0, vk::IndexType::UINT32);
 
             let mut new_rotation = gpu_entity.transform.rotation.clone();
-            new_rotation.y *= time;
+            // new_rotation.y *= time;
             let new_quaternion = Quaternion::from(new_rotation);
             let model = Self::trs_matrix(gpu_entity.transform.translation, new_quaternion, gpu_entity.transform.scale);
 

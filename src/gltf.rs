@@ -1,5 +1,5 @@
 
-use std::{any::Any, time::Instant};
+use std::{any::Any, collections::HashMap, time::Instant};
 
 use anyhow::{anyhow, Result};
 use cgmath::{Vector2, Vector3};
@@ -8,28 +8,34 @@ use gltf::{image::Format};
 use crate::{bitmap::Bitmap, mesh::Mesh, vertex::Vertex};
 
 
-pub struct Gltf {
-
+pub struct GltfModel {
+    pub meshes: Vec<Mesh>,
+    pub bitmaps: Vec<Bitmap>,
+    pub mapping: HashMap<usize, usize>,
 }
 
-impl Gltf {
-    pub fn load() -> Result<(Mesh, Bitmap)> {
+impl GltfModel {
+    pub fn load() -> Result<GltfModel> {
         // Load a glTF file with all resources
         let now = Instant::now();
-        let (document, buffers, images) = gltf::import("assets/Suzanne.gltf")?;
+        let (document, buffers, images) = gltf::import("assets/Sponza.glb")?;
         let elapsed_time = now.elapsed();
         println!("Running slow_function() took {} seconds.", elapsed_time.as_secs());
 
         let mut meshes = Vec::new();
+        let mut mapping = HashMap::new();
 
         for mesh in document.meshes() {
             println!("Mesh #{}", mesh.index());
-            for primitive in mesh.primitives() {
+            for (i, primitive) in mesh.primitives().enumerate() {
+                println!("Primitive #{}", i);
                 let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
                 let material = primitive.material();
                 if let Some(texture_info) = material.pbr_metallic_roughness().base_color_texture() {
-                    let index = texture_info.texture().index();
+                    let index = texture_info.texture().source().index();
+                    println!("texture index {}", index);
+                    mapping.insert(i, index);
                 }
 
                 let positions: Vec<[f32; 3]> =
@@ -63,27 +69,32 @@ impl Gltf {
                 let mesh = Mesh::new(vertices, indices);
                 meshes.push(mesh);
 
-                println!("- Primitive #{}", primitive.index());
-                for (semantic, _) in primitive.attributes() {
-                    println!("-- {:?}", semantic);
-                }
+                // println!("- Primitive #{}", primitive.index());
+                // for (semantic, _) in primitive.attributes() {
+                //     println!("-- {:?}", semantic);
+                // }
             }
         }
 
         let mut bitmaps = Vec::new();
 
         for image in images {
-            println!("width: {}", image.width);
-            println!("height: {}", image.height);
-            println!("format: {:?}", image.format);
+            println!("Image #{}", 1);
+            println!("width: {}, height: {}, format {:?}", image.width, image.height, image.format);
 
             let pixels = &image.pixels;
-            bitmaps.push(Gltf::get_bitmap_from_gltf_image(&image)?);
+            bitmaps.push(Self::get_bitmap_from_gltf_image(&image)?);
         }
 
-        let mesh = meshes.remove(0);
-        let bitmap = bitmaps.remove(0);
-        Ok((mesh, bitmap))
+        println!("leng {}", bitmaps.len());
+
+        // let mesh = meshes.remove(0);
+        // let bitmap = bitmaps.remove(0);
+        Ok(Self {
+            meshes,
+            bitmaps,
+            mapping,
+        })
     }
 
     fn get_bitmap_from_gltf_image(image: &gltf::image::Data) -> Result<Bitmap> {

@@ -8,6 +8,7 @@ pub struct _Scene {
     pub mesh_registry: MeshRegistry,
 }
 
+#[derive(Clone, Copy)]
 pub struct Transform {
     pub translation: Vector3<f32>,
     pub rotation: Euler<Rad<f32>>,
